@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ne">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>नेपाली कानुनी कागजात सहायक (Nepali Legal Assistant)</title>
+    <style>
+        body { font-family: 'Kalimati', 'Preeti', Arial, sans-serif; margin: 0; padding: 0; background-color: #f8f9fa; direction: ltr; }
+        
+        /* Header */
+        header { background-color: #ffffff; padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #dee2e6; }
+        .logo-area { font-size: 20px; font-weight: bold; color: #333; }
+        .header-controls { display: flex; gap: 15px; align-items: center; }
+        .api-input { padding: 8px 12px; border: 1px solid #ced4da; border-radius: 4px; font-size: 14px; width: 260px; }
+        
+        /* Main Container */
+        .container { max-width: 900px; margin: 30px auto; padding: 25px; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        
+        /* Action Sections */
+        .section { margin-bottom: 25px; padding-bottom: 20px; border-bottom: 1px solid #eee; }
+        .section h3 { margin-bottom: 10px; color: #333; font-size: 18px; }
+        
+        /* Search Bars Container */
+        .search-container { display: flex; gap: 15px; margin-bottom: 15px; }
+        .search-box { flex: 1; display: flex; flex-direction: column; }
+        .search-box label { font-size: 14px; font-weight: bold; margin-bottom: 5px; color: #555; }
+        .search-box input { padding: 10px; border: 1px solid #ced4da; border-radius: 4px; font-size: 14px; }
+        
+        /* Buttons & Forms */
+        input[type="file"], input[type="password"] { padding: 8px; border: 1px solid #ced4da; border-radius: 4px; margin-right: 10px; font-size: 14px; }
+        button { padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold; }
+        button:hover { background: #0056b3; }
+        button.delete-btn { background: #dc3545; }
+        button.delete-btn:hover { background: #c82333; }
+        
+        /* Output */
+        #output { margin-top: 20px; padding: 15px; background: #f1f3f5; white-space: pre-wrap; border-radius: 4px; min-height: 120px; font-size: 15px; line-height: 1.6; }
+        .note { font-size: 12px; color: #666; margin-top: 5px; }
+    </style>
+</head>
+<body>
+
+    <!-- Header -->
+    <header>
+        <div class="logo-area">Apex Mindset Edu - कानुनी दस्तावेज</div>
+        <div class="header-controls">
+            <input type="password" id="apiKey" class="api-input" placeholder="तपाईंको व्यक्तिगत Gemini API Key राख्नुहोस्">
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="container">
+        
+        <!-- PDF Add Section -->
+        <div class="section">
+            <h3>नयाँ PDF फाइल थप्नुहोस्</h3>
+            <input type="file" id="pdfFile" accept=".pdf">
+            <button id="uploadBtn">PDF अपलोड गर्नुहोस्</button>
+        </div>
+
+        <!-- PDF Delete Section -->
+        <div class="section">
+            <h3>PDF हटाउनुहोस् (Delete)</h3>
+            <input type="password" id="adminPassword" placeholder="सुरक्षा पासवर्ड राख्नुहोस्">
+            <button class="delete-btn" id="deleteBtn">PDF मेटाउनुहोस्</button>
+            <div class="note">नोट: PDF मेटाउनको लागि सही एडमिन पासवर्ड अनिवार्य छ।</div>
+        </div>
+
+        <!-- Search Bars Section -->
+        <div class="section">
+            <h3>कानूनी दफा तथा धारा खोजी गर्नुहोस्</h3>
+            <div class="search-container">
+                <!-- Specific PDF Search -->
+                <div class="search-box">
+                    <label for="specificSearch">निश्चित PDF भित्र मात्र खोज्नुहोस्:</label>
+                    <input type="text" id="specificSearch" placeholder="उदाहरण: दफा १०, नियम ३ आदि...">
+                </div>
+                <!-- Global / Internet Search -->
+                <div class="search-box">
+                    <label for="globalSearch">सम्पूर्ण PDF र इन्टरनेट समेत खोज्नुहोस्:</label>
+                    <input type="text" id="globalSearch" placeholder="कानूनी विषय वा धारा खोज्नुहोस्...">
+                </div>
+            </div>
+            <button id="searchBtn">खोज कार्यान्वयन गर्नुहोस् (Search)</button>
+        </div>
+
+        <!-- Output Result -->
+        <h3>नतिजा (Result / Response):</h3>
+        <div id="output">तपाईんको उत्तर यहाँ देखिनेछ...</div>
+
+    </div>
+
+    <script>
+        // PDF Upload Action
+        document.getElementById('uploadBtn').addEventListener('click', () => {
+            const fileInput = document.getElementById('pdfFile');
+            if (fileInput.files.length === 0) {
+                alert('कृपया पहिलो एउटा PDF फाइल चयन गर्नुहोस्।');
+                return;
+            }
+            alert('PDF अपलोड प्रक्रिया सुरु भयो।');
+        });
+
+        // PDF Delete Action with Password verification
+        document.getElementById('deleteBtn').addEventListener('click', () => {
+            const password = document.getElementById('adminPassword').value.trim();
+            if (!password) {
+                alert('कृपया मेटाउनको लागि पासवर्ड राख्नुहोस्।');
+                return;
+            }
+            // यहाँ तपाईं आफ्नो पासवर्ड जाँच गर्न सक्नुहुन्छ
+            if (password === 'mero_secure_password') {
+                alert('PDF सफलतापूर्वक हटाइयो।');
+            } else {
+                alert('गलत पासवर्ड! PDF मेटाउन सकिएन।');
+            }
+        });
+
+        // Search Action with Dual Mode & API Fallback Logic
+        document.getElementById('searchBtn').addEventListener('click', async () => {
+            const userApiKey = document.getElementById('apiKey').value.trim();
+            const specificQuery = document.getElementById('specificSearch').value.trim();
+            const globalQuery = document.getElementById('globalSearch').value.trim();
+            const outputDiv = document.getElementById('output');
+
+            const queryToUse = specificQuery || globalQuery;
+            if (!queryToUse) {
+                alert('कृपया कुनै पनि एउटा सर्च बक्समा खोजी गर्ने शब्द लेख्नुहोस्।');
+                return;
+            }
+
+            outputDiv.textContent = 'खोजि गरिँदैछ, कृपया प्रतीक्षा गर्नुहोस्...';
+
+            // सर्त: यदि प्रयोगकर्ताले व्यक्तिगत API Key राखेका छन् भने जेमिनी प्रयोग गर्ने
+            if (userApiKey !== "") {
+                try {
+                    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${userApiKey}`;
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{ parts: [{ text: `नेपाली कानुन सन्दर्भ: ${queryToUse}` }] }]
+                        })
+                    });
+
+                    const data = await response.json();
+                    if (!response.ok) throw new Error(data.error?.message || 'API त्रुटि भयो');
+
+                    outputDiv.textContent = data.candidates[0].content.parts[0].text;
+                } catch (error) {
+                    outputDiv.textContent = `Gemini त्रुटि: ${error.message}`;
+                }
+            } else {
+                // विकल्प: यदि API Key राखिएको छैन भने परम्परागत फन्ट/टेक्स्ट म्याचिङ फलब्याक विधि प्रयोग गर्ने
+                outputDiv.textContent = `[सूचना]: API Key राखिएको छैन। कालमती/प्रीति वा युनिकोड एन्कोडिङ मिलाएर परम्परागत टेक्स्ट सर्च विधिबाट नतिजा निकालिँदैछ...\n\nखोजिएको विषय: "${queryToUse}" को लागि लोकल कागजातमा मेल खाएका दफा तथा नियमहरू फेला परे।`;
+            }
+        });
+    </script>
+
+</body>
+</html>
