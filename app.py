@@ -1,65 +1,10 @@
 import os
-from flask import Flask, redirect, render_template_string, request, url_for
+from flask import Flask, render_template, request
 import fitz  # PyMuPDF
 
 app = Flask(__name__)
-UPLOAD_DIR = "/tmp/uploaded_pdfs"  # Vercel मा /tmp फोल्डर मात्र लेख्न मिल्छ
+UPLOAD_DIR = "/tmp/uploaded_pdfs"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-HTML_TEMPLATE = """
-<!doctype html>
-<html lang="ne">
-<head>
-    <meta charset="utf-8">
-    <title>नेपाली PDF दफा/नियम खोजी</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 40px; background: #f4f4f9; color: #333; }
-        h1 { color: #2c3e50; }
-        .box { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        input[type="text"], input[type="file"] { padding: 10px; width: 60%; margin-right: 10px; }
-        button { padding: 10px 20px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; }
-        button:hover { background: #2980b9; }
-        .result { background: #e8f8f5; padding: 15px; border-left: 5px solid #2ecc71; margin-top: 10px; }
-    </style>
-</head>
-<body>
-    <h1>🇳🇵 नेपाली PDF दफा, नियम तथा धारा खोजी प्रणाली</h1>
-    
-    <div class="box">
-        <h3>📁 PDF अपलोड गर्नुहोस्</h3>
-        <form method="POST" enctype="multipart/form-data">
-            <input type="file" name="pdf_files" multiple accept=".pdf">
-            <button type="submit">अपलोड गर्नुहोस्</button>
-        </form>
-        {% if message %}
-            <p style="color: green;"><b>{{ message }}</b></p>
-        {% endif %}
-    </div>
-
-    <div class="box">
-        <h3>🔍 कागजातमा खोज्नुहोस्</h3>
-        <form method="POST">
-            <input type="text" name="query" placeholder="उदा: दफा १०, नियम ५" value="{{ query or '' }}">
-            <button type="submit">खोज्नुहोस्</button>
-        </form>
-    </div>
-
-    {% if results %}
-        <div class="box">
-            <h3>📌 खोज नतिजा ('{{ query }}'):</h3>
-            {% for res in results %}
-                <div class="result">
-                    <p><b>फाइल नाम:</b> {{ res.filename }} | <b>पेज नम्बर:</b> {{ res.page }}</p>
-                    <p><b>अंश:</b> {{ res.text }}</p>
-                </div>
-            {% endfor %}
-        </div>
-    {% elif searched %}
-        <p style="color: red;">कुनै नतिजा फेला परेन।</p>
-    {% endif %}
-</body>
-</html>
-"""
 
 
 @app.route("/", methods=["GET", "POST"])
@@ -67,9 +12,10 @@ def index():
   message = ""
   results = []
   query = ""
+  selected_category = request.form.get("category", "1")
 
   if request.method == "POST":
-    # यदि फाइल अपलोड गरिएको छ भने
+    # फाइल अपलोड
     if "pdf_files" in request.files:
       files = request.files.getlist("pdf_files")
       for file in files:
@@ -77,7 +23,7 @@ def index():
           file.save(os.path.join(UPLOAD_DIR, file.filename))
       message = f"जम्मा {len(files)} वटा फाइल सफलतापूर्वक अपलोड भयो!"
 
-    # यदि खोजी (Search) गरिएको छ भने
+    # खोजी (Search)
     if "query" in request.form:
       query = request.form.get("query")
       if query:
@@ -98,8 +44,8 @@ def index():
             except Exception as e:
               pass
 
-  return render_template_string(
-      HTML_TEMPLATE,
+  return render_template(
+      "index.html",
       message=message,
       results=results,
       query=query,
