@@ -133,26 +133,46 @@ def chat():
             for m in g["matches"][:6]:
                 sec = m["section"] or "सन्दर्भ अज्ञात"
                 ctx_lines.append(f"[PDF: {g['filename']} | पृष्ठ {m['page']} | {sec}] {m['snippet']}")
-        context = "\n".join(ctx_lines) if ctx_lines else "कुनै मिल्दो सामग्री भेटिएन।"
+        context = "
+".join(ctx_lines) if ctx_lines else "कुनै मिल्दो सामग्री भेटिएन।"
 
         prompt = (
             "तपाईं नेपाली कानुनी सहायक हुनुहुन्छ। तल दिइएको PDF सामग्रीको आधारमा "
             "प्रयोगकर्ताको प्रश्नको जवाफ दिनुहोस्। जवाफमा स्पष्ट रूपमा उल्लेख गर्नुहोस् "
-            "— कुन धारा/दफा/नियम/उपनियममा छ र कुन PDF को कुन पृष्ठमा छ।\n\n"
-            f"PDF सामग्री:\n{context}\n\nप्रश्न: {query}\n"
-        )
-        try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}"
-            r = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=45)
-            j = r.json()
-            if r.status_code == 200:
-                answer = j["candidates"][0]["content"]["parts"][0]["text"]
-                return jsonify({"answer": answer, "results": results, "mode": "gemini"})
-            err = j.get("error", {}).get("message", "Gemini API त्रुटि")
-            return jsonify({"answer": f"Gemini त्रुटि: {err}", "results": results, "mode": "error"})
-        except Exception as e:
-            return jsonify({"answer": f"त्रुटि: {e}", "results": results, "mode": "error"})
+            "— कुन धारा/दफा/नियम/उपनियममा छ र कुन PDF को कुन पृष्ठमा छ।
 
+"
+            f"PDF सामग्री:
+{context}
+
+प्रश्न: {query}
+"
+        )
+        
+        # Fallback Models
+        models_to_try = ["gemini-3.8-flash", "gemini-1.5-flash"]
+        
+        for model in models_to_try:
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+                r = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=45)
+                j = r.json()
+                if r.status_code == 200:
+                    answer = j["candidates"][0]["content"]["parts"][0]["text"]
+                    return jsonify({"answer": answer, "results": results, "mode": "gemini"})
+            except Exception as e:
+                print(f"[Gemini Error {model}]: {e}")
+                continue  # यदि यो मोडेल फेल भयो भने अर्को मोडेल प्रयास गर्ने
+
+        # यदि सबै मोडेल फेल भए (वा कोटा सकियो भने) स्थानीय खोजमा Fallback गर्ने
+        fallback_msg = "⚠️ (Gemini API मा समस्या आयो वा कोटा सकियो। तल PDF भित्रको स्थानीय खोज नतिजा देखाइएको छ।)
+
+"
+        if not results:
+            return jsonify({"answer": fallback_msg + f"'{query}' का लागि कुनै PDF मा सामग्री भेटिएन।", "results": [], "mode": "fallback"})
+        return jsonify({"answer": fallback_msg + "PDF हरूमा भेटिएका मिल्दा स्थानहरू तल देखाइएका छन्।", "results": results, "mode": "fallback"})
+
+    # यदि प्रयोगकर्ताले API Key नै हालेको छैन भने (Traditional Search)
     if not results:
         return jsonify({
             "answer": f"'{query}' का लागि कुनै PDF मा सामग्री भेटिएन। (Gemini API Key हालेर थप विस्तृत जवाफ पाउन सकिन्छ।)",
@@ -164,6 +184,7 @@ def chat():
         "results": results,
         "mode": "traditional",
     })
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
