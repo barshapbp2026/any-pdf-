@@ -1,3 +1,4 @@
-streamlit
+Flask
 PyMuPDF
-
+requests
+gunicorn

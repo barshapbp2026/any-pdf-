@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="ne">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>नेपाली कानुनी PDF सहायक</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:'Kalimati','Mangal',Arial,sans-serif;margin:0;background:#f5f7fa;color:#1f2937}
+  header{background:linear-gradient(135deg,#1e3a8a,#3b82f6);color:#fff;padding:14px 24px;
+         display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;
+         box-shadow:0 2px 10px rgba(0,0,0,.15)}
+  header h1{margin:0;font-size:18px;font-weight:600}
+  header input{padding:9px 12px;border-radius:6px;border:none;width:280px;font-size:13px}
+  .container{max-width:1050px;margin:24px auto;padding:0 16px}
+  .card{background:#fff;border-radius:10px;padding:20px;margin-bottom:18px;
+        box-shadow:0 1px 4px rgba(0,0,0,.08)}
+  .card h2{margin:0 0 14px;font-size:16px;color:#1e3a8a;
+           border-bottom:2px solid #e5e7eb;padding-bottom:8px}
+  input[type=text],input[type=password],input[type=file],select{
+    padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;font-family:inherit}
+  button{padding:9px 18px;background:#1e3a8a;color:#fff;border:none;border-radius:6px;
+         cursor:pointer;font-size:14px;font-weight:500;font-family:inherit}
+  button:hover{background:#1e40af}
+  button.danger{background:#dc2626}button.danger:hover{background:#b91c1c}
+  button.small{padding:5px 12px;font-size:12px}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .search-box{border:2px solid #e5e7eb;border-radius:8px;padding:14px;background:#f9fafb}
+  .search-box h3{margin:0 0 10px;font-size:14px;color:#374151}
+  .search-box .inputs{display:flex;flex-direction:column;gap:8px}
+  .result-item{border-left:4px solid #3b82f6;background:#f8fafc;
+               padding:12px 14px;margin:10px 0;border-radius:6px}
+  .result-item .meta{font-size:12px;color:#6b7280;margin-bottom:6px;
+                     display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .result-item .meta strong{color:#1e3a8a}
+  .result-item .snippet{font-size:14px;line-height:1.65;color:#374151}
+  .pdf-group{margin-bottom:16px}
+  .pdf-group h4{margin:0 0 8px;color:#374151;font-size:14px}
+  .badge{display:inline-block;background:#dbeafe;color:#1e40af;
+         padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600}
+  .answer{background:#ecfdf5;border-left:4px solid #10b981;padding:14px;
+          border-radius:6px;white-space:pre-wrap;line-height:1.7;font-size:14px}
+  .note{font-size:12px;color:#6b7280;margin-top:6px}
+  .empty{color:#9ca3af;font-style:italic;padding:20px;text-align:center}
+  .pdf-chip{background:#e0e7ff;color:#3730a3;padding:4px 10px;border-radius:20px;
+            font-size:12px;display:inline-block;margin:3px}
+  @media(max-width:700px){.grid2{grid-template-columns:1fr}header input{width:160px}}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📚 नेपाली कानुनी PDF सहायक</h1>
+  <input type="password" id="apiKey" placeholder="Gemini API Key (वैकल्पिक)">
+</header>
+
+<div class="container">
+
+  <div class="card">
+    <h2>📤 नयाँ PDF थप्नुहोस्</h2>
+    <div class="row">
+      <input type="file" id="pdfFiles" accept=".pdf" multiple>
+      <button id="uploadBtn">अपलोड गर्नुहोस्</button>
+    </div>
+    <div id="pdfListWrap" style="margin-top:10px"></div>
+  </div>
+
+  <div class="card">
+    <h2>🗑️ PDF हटाउनुहोस्</h2>
+    <div class="row">
+      <input type="password" id="adminPassword" placeholder="एडमिन पासवर्ड">
+      <select id="deletePdfSelect"></select>
+      <button class="danger" id="deleteBtn">मेटाउनुहोस्</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>🔍 धारा / दफा / नियम खोज्नुहोस्</h2>
+    <div class="grid2">
+      <div class="search-box">
+        <h3>📄 निश्चित PDF भित्र खोज</h3>
+        <div class="inputs">
+          <select id="specificPdfSelect"><option value="">— PDF छान्नुहोस् —</option></select>
+          <input type="text" id="specificQuery" placeholder="जस्तै: दफा 10, नियम 3 ...">
+          <button id="specificBtn">यो PDF मा खोज्नुहोस्</button>
+        </div>
+      </div>
+      <div class="search-box">
+        <h3>🌐 सबै PDF हरूमा खोज</h3>
+        <div class="inputs">
+          <input type="text" id="allQuery" placeholder="कानुनी विषय वा धारा...">
+          <button id="allBtn">सबै PDF मा खोज्नुहोस्</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>💬 PDF सँग कुराकानी / प्रश्न सोध्नुहोस्</h2>
+    <div class="row">
+      <input type="text" id="chatQuery"
+             placeholder="तपाईंको प्रश्न... (API key भए Gemini ले जवाफ दिनेछ)"
+             style="flex:1;min-width:220px">
+      <button id="chatBtn">पठाउनुहोस्</button>
+    </div>
+    <div class="note">API Key नभएमा परम्परागत टेक्स्ट खोज नतिजा मात्र देखाइनेछ।</div>
+  </div>
+
+  <div class="card">
+    <h2>📋 नतिजा</h2>
+    <div id="answerWrap"></div>
+    <div id="resultsWrap"><div class="empty">अझै कुनै खोज गरिएको छैन।</div></div>
+  </div>
+
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+async function refreshPdfList() {
+  const r = await fetch('/list_pdfs');
+  const files = await r.json();
+  const spec = $('#specificPdfSelect'), del = $('#deletePdfSelect');
+  spec.innerHTML = '<option value="">— PDF छान्नुहोस् —</option>';
+  del.innerHTML = '';
+  if (!files.length) {
+    del.innerHTML = '<option value="">कुनै PDF छैन</option>';
+    $('#pdfListWrap').innerHTML = '<div class="empty">कुनै PDF अपलोड गरिएको छैन।</div>';
+    return;
+  }
+  files.forEach(f => {
+    spec.innerHTML += '<option value="' + esc(f) + '">' + esc(f) + '</option>';
+    del.innerHTML  += '<option value="' + esc(f) + '">' + esc(f) + '</option>';
+  });
+  $('#pdfListWrap').innerHTML = files.map(f => '<span class="pdf-chip">📄 ' + esc(f) + '</span>').join('');
+}
+
+$('#uploadBtn').onclick = async () => {
+  const files = $('#pdfFiles').files;
+  if (!files.length) return alert('PDF फाइल छान्नुहोस्');
+  const fd = new FormData();
+  for (const f of files) fd.append('pdf_files', f);
+  $('#uploadBtn').disabled = true;
+  try {
+    const r = await fetch('/upload', { method:'POST', body: fd });
+    const d = await r.json();
+    alert(d.saved.length + ' फाइल अपलोड भयो!');
+    await refreshPdfList();
+  } catch (e) { alert('अपलोड त्रुटि: ' + e.message); }
+  finally { $('#uploadBtn').disabled = false; }
+};
+
+$('#deleteBtn').onclick = async () => {
+  const password = $('#adminPassword').value;
+  const filename = $('#deletePdfSelect').value;
+  if (!password) return alert('पासवर्ड हाल्नुहोस्');
+  if (!filename) return alert('PDF छान्नुहोस्');
+  if (!confirm('"' + filename + '" मेटाउने हो?')) return;
+  const r = await fetch('/delete', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ password, filename })
+  });
+  const d = await r.json();
+  if (!r.ok) return alert(d.error || 'त्रुटि');
+  alert(d.message);
+  await refreshPdfList();
+};
+
+function renderResults(results, query) {
+  const wrap = $('#resultsWrap');
+  if (!results || !results.length) {
+    wrap.innerHTML = '<div class="empty">"' + esc(query) + '" का लागि कुनै नतिजा भेटिएन।</div>';
+    return;
+  }
+  let html = '';
+  results.forEach(g => {
+    html += '<div class="pdf-group"><h4>📄 ' + esc(g.filename) + '</h4>';
+    g.matches.forEach(m => {
+      const sec = m.section
+        ? '<span class="badge">' + esc(m.section) + '</span>'
+        : '<span class="badge">सन्दर्भ अज्ञात</span>';
+      const url = '/pdf/' + encodeURIComponent(g.filename) + '#page=' + m.page;
+      html += '<div class="result-item">' +
+        '<div class="meta">' + sec + ' पृष्ठ <strong>' + m.page + '</strong>' +
+          '<a href="' + url + '" target="_blank" style="margin-left:auto">' +
+            '<button class="small">पृष्ठ देखाउनुहोस् →</button>' +
+          '</a>' +
+        '</div>' +
+        '<div class="snippet">' + esc(m.snippet) + '</div>' +
+      '</div>';
+    });
+    html += '</div>';
+  });
+  wrap.innerHTML = html;
+}
+
+async function doSearch(mode) {
+  const query = mode === 'specific'
+    ? $('#specificQuery').value.trim()
+    : $('#allQuery').value.trim();
+  const filename = mode === 'specific' ? $('#specificPdfSelect').value : '';
+  if (!query) return alert('खोज शब्द लेख्नुहोस्');
+  if (mode === 'specific' && !filename) return alert('PDF छान्नुहोस्');
+  $('#resultsWrap').innerHTML = '<div class="empty">खोजिँदै...</div>';
+  const r = await fetch('/search', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ query, mode, filename })
+  });
+  const d = await r.json();
+  if (!r.ok) return alert(d.error || 'त्रुटि');
+  renderResults(d.results, d.query);
+}
+
+$('#specificBtn').onclick = () => doSearch('specific');
+$('#allBtn').onclick = () => doSearch('all');
+
+$('#chatBtn').onclick = async () => {
+  const query = $('#chatQuery').value.trim();
+  if (!query) return alert('प्रश्न लेख्नुहोस्');
+  const api_key = $('#apiKey').value.trim();
+  $('#answerWrap').innerHTML = '<div class="answer">प्रश्न प्रशोधन हुँदैछ...</div>';
+  const r = await fetch('/chat', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ query, api_key })
+  });
+  const d = await r.json();
+  $('#answerWrap').innerHTML = '<div class="answer">' + esc(d.answer) + '</div>';
+  renderResults(d.results, query);
+};
+
+refreshPdfList();
+</script>
+</body>
+</html>
