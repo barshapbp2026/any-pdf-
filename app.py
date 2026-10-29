@@ -149,23 +149,42 @@ def chat():
 "
         )
         
-        # Fallback Models
-        models_to_try = ["gemini-3.8-flash", "gemini-1.5-flash"]
+        # धेरै मोडेलहरूको सूची (नयाँदेखि पुरानोसम्म)
+        models_to_try = [
+            "gemini-3.8-flash",       # नयाँ मोडेल (त्रुटि सन्देश अनुसार)
+            "gemini-1.5-flash",       # स्थिर र छिटो मोडेल
+            "gemini-1.5-flash-8b",    # हल्का मोडेल (कोटा छिटो रिसेट हुन्छ)
+            "gemini-3.8-pro",         # नयाँ प्रो मोडेल
+            "gemini-1.5-pro",         # स्थिर प्रो मोडेल
+            "gemini-pro"              # पुरानो मोडेल (अन्तिम विकल्प)
+        ]
         
+        last_error = ""
         for model in models_to_try:
             try:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-                r = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=45)
-                j = r.json()
+                r = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=30)
+                
                 if r.status_code == 200:
-                    answer = j["candidates"][0]["content"]["parts"][0]["text"]
-                    return jsonify({"answer": answer, "results": results, "mode": "gemini"})
+                    j = r.json()
+                    if "candidates" in j and len(j["candidates"]) > 0:
+                        answer = j["candidates"][0]["content"]["parts"][0]["text"]
+                        return jsonify({"answer": answer, "results": results, "mode": "gemini"})
+                else:
+                    # एरर आएमा त्यसलाई सेभ गरेर अर्को मोडेल प्रयास गर्ने
+                    try:
+                        last_error = r.json().get("error", {}).get("message", f"HTTP {r.status_code}")
+                    except:
+                        last_error = f"HTTP {r.status_code}"
+                    print(f"[Gemini Fail - {model}]: {last_error}")
+                    
             except Exception as e:
-                print(f"[Gemini Error {model}]: {e}")
-                continue  # यदि यो मोडेल फेल भयो भने अर्को मोडेल प्रयास गर्ने
+                last_error = str(e)
+                print(f"[Gemini Error - {model}]: {e}")
+                continue  # अर्को मोडेल प्रयास गर्ने
 
         # यदि सबै मोडेल फेल भए (वा कोटा सकियो भने) स्थानीय खोजमा Fallback गर्ने
-        fallback_msg = "⚠️ (Gemini API मा समस्या आयो वा कोटा सकियो। तल PDF भित्रको स्थानीय खोज नतिजा देखाइएको छ।)
+        fallback_msg = f"⚠️ (Gemini API मा समस्या आयो: {last_error}। तल PDF भित्रको स्थानीय खोज नतिजा देखाइएको छ।)
 
 "
         if not results:
