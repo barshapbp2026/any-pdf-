@@ -128,12 +128,12 @@ def chat():
             for m in g["matches"][:6]:
                 sec = m["section"] or "सन्दर्भ अज्ञात"
                 ctx_lines.append(f"[PDF: {g['filename']} | पृष्ठ {m['page']} | {sec}] {m['snippet']}")
-        context = "\\n".join(ctx_lines) if ctx_lines else "कुनै मिल्दो सामग्री भेटिएन।"
+        context = "\n".join(ctx_lines) if ctx_lines else "कुनै मिल्दो सामग्री भेटिएन।"
         prompt = (
             "तपाईं नेपाली कानुनी सहायक हुनुहुन्छ। तल दिइएको PDF सामग्रीको आधारमा "
             "प्रयोगकर्ताको प्रश्नको जवाफ दिनुहोस्। जवाफमा स्पष्ट रूपमा उल्लेख गर्नुहोस् "
-            "— कुन धारा/दफा/नियम/उपनियममा छ र कुन PDF को कुन पृष्ठमा छ।\\n\\n"
-            f"PDF सामग्री:\\n{context}\\n\\nप्रश्न: {query}\\n"
+            "— कुन धारा/दफा/नियम/उपनियममा छ र कुन PDF को कुन पृष्ठमा छ।\n\n"
+            f"PDF सामग्री:\n{context}\n\nप्रश्न: {query}\n"
         )
         models_to_try = [
             "gemini-3.8-flash", 
@@ -161,7 +161,7 @@ def chat():
             except Exception as e:
                 last_error = str(e)
                 continue
-        fallback_msg = f"⚠️ (Gemini API मा समस्या आयो: {last_error}। तल PDF भित्रको स्थानीय खोज नतिजा देखाइएको छ।)\\n\\n"
+        fallback_msg = f"⚠️ (Gemini API मा समस्या आयो: {last_error}। तल PDF भित्रको स्थानीय खोज नतिजा देखाइएको छ।)\n\n"
         if not results:
             return jsonify({"answer": fallback_msg + f"'{query}' का लागि कुनै PDF मा सामग्री भेटिएन।", "results": [], "mode": "fallback"})
         return jsonify({"answer": fallback_msg + "PDF हरूमा भेटिएका मिल्दा स्थानहरू तल देखाइएका छन्।", "results": results, "mode": "fallback"})
