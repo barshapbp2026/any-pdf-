@@ -9,7 +9,6 @@ UPLOAD_DIR = "/tmp/uploaded_pdfs"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 DELETE_PASSWORD = os.environ.get("DELETE_PASSWORD", "admin123")
-GEMINI_MODEL = "gemini-2.0-flash"
 
 NEPALI_DIGITS = str.maketrans("०१२३४५६७८९", "0123456789")
 def _norm(t):
@@ -122,6 +121,7 @@ def chat():
     query = (data.get("query") or "").strip()
     api_key = (data.get("api_key") or "").strip()
     filename = (data.get("filename") or "").strip() or None
+    
     if not query:
         return jsonify({"error": "प्रश्न खाली छ।"}), 400
 
@@ -133,28 +133,22 @@ def chat():
             for m in g["matches"][:6]:
                 sec = m["section"] or "सन्दर्भ अज्ञात"
                 ctx_lines.append(f"[PDF: {g['filename']} | पृष्ठ {m['page']} | {sec}] {m['snippet']}")
-        context = "
-".join(ctx_lines) if ctx_lines else "कुनै मिल्दो सामग्री भेटिएन।"
+        
+        context = "\n".join(ctx_lines) if ctx_lines else "कुनै मिल्दो सामग्री भेटिएन।"
 
         prompt = (
             "तपाईं नेपाली कानुनी सहायक हुनुहुन्छ। तल दिइएको PDF सामग्रीको आधारमा "
             "प्रयोगकर्ताको प्रश्नको जवाफ दिनुहोस्। जवाफमा स्पष्ट रूपमा उल्लेख गर्नुहोस् "
-            "— कुन धारा/दफा/नियम/उपनियममा छ र कुन PDF को कुन पृष्ठमा छ।
-
-"
-            f"PDF सामग्री:
-{context}
-
-प्रश्न: {query}
-"
+            "— कुन धारा/दफा/नियम/उपनियममा छ र कुन PDF को कुन पृष्ठमा छ।\n\n"
+            f"PDF सामग्री:\n{context}\n\nप्रश्न: {query}\n"
         )
         
         models_to_try = [
-            "gemini-3.8-flash",
-            "gemini-1.5-flash",
-            "gemini-1.5-flash-8b",
-            "gemini-3.8-pro",
-            "gemini-1.5-pro",
+            "gemini-3.8-flash", 
+            "gemini-1.5-flash", 
+            "gemini-1.5-flash-8b", 
+            "gemini-3.8-pro", 
+            "gemini-1.5-pro", 
             "gemini-pro"
         ]
         
@@ -174,31 +168,20 @@ def chat():
                         last_error = r.json().get("error", {}).get("message", f"HTTP {r.status_code}")
                     except:
                         last_error = f"HTTP {r.status_code}"
-                    print(f"[Gemini Fail - {model}]: {last_error}")
                     
             except Exception as e:
                 last_error = str(e)
-                print(f"[Gemini Error - {model}]: {e}")
                 continue
 
-        fallback_msg = f"⚠️ (Gemini API मा समस्या आयो: {last_error}। तल PDF भित्रको स्थानीय खोज नतिजा देखाइएको छ।)
-
-"
+        fallback_msg = f"⚠️ (Gemini API मा समस्या आयो: {last_error}। तल PDF भित्रको स्थानीय खोज नतिजा देखाइएको छ।)\n\n"
         if not results:
             return jsonify({"answer": fallback_msg + f"'{query}' का लागि कुनै PDF मा सामग्री भेटिएन।", "results": [], "mode": "fallback"})
         return jsonify({"answer": fallback_msg + "PDF हरूमा भेटिएका मिल्दा स्थानहरू तल देखाइएका छन्।", "results": results, "mode": "fallback"})
 
     if not results:
-        return jsonify({
-            "answer": f"'{query}' का लागि कुनै PDF मा सामग्री भेटिएन। (Gemini API Key हालेर थप विस्तृत जवाफ पाउन सकिन्छ।)",
-            "results": [],
-            "mode": "traditional",
-        })
-    return jsonify({
-        "answer": "PDF हरूमा भेटिएका मिल्दा स्थानहरू तल देखाइएका छन्। विस्तृत व्याख्याको लागि Gemini API Key हाल्नुहोस्।",
-        "results": results,
-        "mode": "traditional",
-    })
+        return jsonify({"answer": f"'{query}' का लागि कुनै PDF मा सामग्री भेटिएन।", "results": [], "mode": "traditional"})
+    
+    return jsonify({"answer": "PDF हरूमा भेटिएका मिल्दा स्थानहरू तल देखाइएका छन्।", "results": results, "mode": "traditional"})
 
 
 if __name__ == "__main__":
