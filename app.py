@@ -135,7 +135,7 @@ def chat():
             "— कुन धारा/दफा/नियम/उपनियममा छ र कुन PDF को कुन पृष्ठमा छ।\n\n"
             f"PDF सामग्री:\n{context}\n\nप्रश्न: {query}\n"
         )
-                models_to_try = [
+        models_to_try = [
             "gemini-2.5-flash",
             "gemini-3.8-flash",
             "gemini-2.5-flash-lite",
