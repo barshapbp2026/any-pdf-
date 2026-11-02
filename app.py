@@ -2,7 +2,7 @@ import os
 import re
 import requests
 from flask import Flask, render_template, request, jsonify, send_from_directory
-import fitz  # PyMuPDF
+import fitz
 
 app = Flask(__name__)
 UPLOAD_DIR = "/tmp/uploaded_pdfs"
@@ -27,9 +27,7 @@ def search_in_pdf(pdf_path, query, max_results=30):
         for page_num in range(len(doc)):
             page_text = doc[page_num].get_text("text")
             page_norm = _norm(page_text)
-
             section_positions = [(m.start(), m.group()) for m in SECTION_RE.finditer(page_norm)]
-
             idx = 0
             while True:
                 pos = page_norm.find(q_norm, idx)
@@ -121,28 +119,22 @@ def chat():
     query = (data.get("query") or "").strip()
     api_key = (data.get("api_key") or "").strip()
     filename = (data.get("filename") or "").strip() or None
-    
     if not query:
         return jsonify({"error": "प्रश्न खाली छ।"}), 400
-
     results = collect_results(query, filename=filename)
-
     if api_key:
         ctx_lines = []
         for g in results[:5]:
             for m in g["matches"][:6]:
                 sec = m["section"] or "सन्दर्भ अज्ञात"
                 ctx_lines.append(f"[PDF: {g['filename']} | पृष्ठ {m['page']} | {sec}] {m['snippet']}")
-        
-        context = "\n".join(ctx_lines) if ctx_lines else "कुनै मिल्दो सामग्री भेटिएन।"
-
+        context = "\\n".join(ctx_lines) if ctx_lines else "कुनै मिल्दो सामग्री भेटिएन।"
         prompt = (
             "तपाईं नेपाली कानुनी सहायक हुनुहुन्छ। तल दिइएको PDF सामग्रीको आधारमा "
             "प्रयोगकर्ताको प्रश्नको जवाफ दिनुहोस्। जवाफमा स्पष्ट रूपमा उल्लेख गर्नुहोस् "
-            "— कुन धारा/दफा/नियम/उपनियममा छ र कुन PDF को कुन पृष्ठमा छ।\n\n"
-            f"PDF सामग्री:\n{context}\n\nप्रश्न: {query}\n"
+            "— कुन धारा/दफा/नियम/उपनियममा छ र कुन PDF को कुन पृष्ठमा छ।\\n\\n"
+            f"PDF सामग्री:\\n{context}\\n\\nप्रश्न: {query}\\n"
         )
-        
         models_to_try = [
             "gemini-3.8-flash", 
             "gemini-1.5-flash", 
@@ -151,13 +143,11 @@ def chat():
             "gemini-1.5-pro", 
             "gemini-pro"
         ]
-        
         last_error = ""
         for model in models_to_try:
             try:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
                 r = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=30)
-                
                 if r.status_code == 200:
                     j = r.json()
                     if "candidates" in j and len(j["candidates"]) > 0:
@@ -168,21 +158,16 @@ def chat():
                         last_error = r.json().get("error", {}).get("message", f"HTTP {r.status_code}")
                     except:
                         last_error = f"HTTP {r.status_code}"
-                    
             except Exception as e:
                 last_error = str(e)
                 continue
-
-        fallback_msg = f"⚠️ (Gemini API मा समस्या आयो: {last_error}। तल PDF भित्रको स्थानीय खोज नतिजा देखाइएको छ।)\n\n"
+        fallback_msg = f"⚠️ (Gemini API मा समस्या आयो: {last_error}। तल PDF भित्रको स्थानीय खोज नतिजा देखाइएको छ।)\\n\\n"
         if not results:
             return jsonify({"answer": fallback_msg + f"'{query}' का लागि कुनै PDF मा सामग्री भेटिएन।", "results": [], "mode": "fallback"})
         return jsonify({"answer": fallback_msg + "PDF हरूमा भेटिएका मिल्दा स्थानहरू तल देखाइएका छन्।", "results": results, "mode": "fallback"})
-
     if not results:
         return jsonify({"answer": f"'{query}' का लागि कुनै PDF मा सामग्री भेटिएन।", "results": [], "mode": "traditional"})
-    
     return jsonify({"answer": "PDF हरूमा भेटिएका मिल्दा स्थानहरू तल देखाइएका छन्।", "results": results, "mode": "traditional"})
-
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
