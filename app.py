@@ -149,14 +149,13 @@ def chat():
 "
         )
         
-        # धेरै मोडेलहरूको सूची (नयाँदेखि पुरानोसम्म)
         models_to_try = [
-            "gemini-3.8-flash",       # नयाँ मोडेल (त्रुटि सन्देश अनुसार)
-            "gemini-1.5-flash",       # स्थिर र छिटो मोडेल
-            "gemini-1.5-flash-8b",    # हल्का मोडेल (कोटा छिटो रिसेट हुन्छ)
-            "gemini-3.8-pro",         # नयाँ प्रो मोडेल
-            "gemini-1.5-pro",         # स्थिर प्रो मोडेल
-            "gemini-pro"              # पुरानो मोडेल (अन्तिम विकल्प)
+            "gemini-3.8-flash",
+            "gemini-1.5-flash",
+            "gemini-1.5-flash-8b",
+            "gemini-3.8-pro",
+            "gemini-1.5-pro",
+            "gemini-pro"
         ]
         
         last_error = ""
@@ -171,7 +170,6 @@ def chat():
                         answer = j["candidates"][0]["content"]["parts"][0]["text"]
                         return jsonify({"answer": answer, "results": results, "mode": "gemini"})
                 else:
-                    # एरर आएमा त्यसलाई सेभ गरेर अर्को मोडेल प्रयास गर्ने
                     try:
                         last_error = r.json().get("error", {}).get("message", f"HTTP {r.status_code}")
                     except:
@@ -181,9 +179,8 @@ def chat():
             except Exception as e:
                 last_error = str(e)
                 print(f"[Gemini Error - {model}]: {e}")
-                continue  # अर्को मोडेल प्रयास गर्ने
+                continue
 
-        # यदि सबै मोडेल फेल भए (वा कोटा सकियो भने) स्थानीय खोजमा Fallback गर्ने
         fallback_msg = f"⚠️ (Gemini API मा समस्या आयो: {last_error}। तल PDF भित्रको स्थानीय खोज नतिजा देखाइएको छ।)
 
 "
@@ -191,7 +188,6 @@ def chat():
             return jsonify({"answer": fallback_msg + f"'{query}' का लागि कुनै PDF मा सामग्री भेटिएन।", "results": [], "mode": "fallback"})
         return jsonify({"answer": fallback_msg + "PDF हरूमा भेटिएका मिल्दा स्थानहरू तल देखाइएका छन्।", "results": results, "mode": "fallback"})
 
-    # यदि प्रयोगकर्ताले API Key नै हालेको छैन भने (Traditional Search)
     if not results:
         return jsonify({
             "answer": f"'{query}' का लागि कुनै PDF मा सामग्री भेटिएन। (Gemini API Key हालेर थप विस्तृत जवाफ पाउन सकिन्छ।)",
