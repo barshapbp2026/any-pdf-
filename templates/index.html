@@ -33,6 +33,21 @@
   .empty{color:#9ca3af;font-style:italic;padding:20px;text-align:center}
   .pdf-chip{background:#e0e7ff;color:#3730a3;padding:4px 10px;border-radius:20px;font-size:12px;display:inline-flex;align-items:center;gap:8px;margin:3px}
   .pdf-chip button{background:#ef4444;padding:2px 6px;font-size:10px;border-radius:4px}
+  
+  /* Landing Page Headers CSS */
+  #headersContainer { margin-top: 10px; }
+  .header-chip {
+    display: inline-block; background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd;
+    padding: 8px 16px; border-radius: 20px; font-size: 14px; font-weight: bold;
+    margin: 5px; cursor: pointer; transition: 0.2s;
+  }
+  .header-chip:hover { background: #bae6fd; transform: scale(1.02); }
+  .sub-header-chip {
+    display: inline-block; background: #f3f4f6; color: #4b5563; border: 1px solid #e5e7eb;
+    padding: 6px 14px; border-radius: 20px; font-size: 13px;
+    margin: 4px 5px 4px 20px; cursor: pointer; transition: 0.2s;
+  }
+  .sub-header-chip:hover { background: #e5e7eb; }
   @media(max-width:700px){.grid2{grid-template-columns:1fr}header input{width:150px}}
 </style>
 </head>
@@ -40,11 +55,19 @@
 
 <header>
   <h1>📚 नेपाली कानुनी PDF सहायक</h1>
-  <!-- यहाँ type="text" राखिएको छ, जसले गर्दा API Key देखिन्छ -->
   <input type="text" id="apiKey" placeholder="Gemini API Key (यहाँ देखिन्छ)">
 </header>
 
 <div class="container">
+
+  <!-- नयाँ थपिएको भाग: सबै हेडरहरू यहाँ देखिन्छन् -->
+  <div class="card">
+    <h2>📌 सबै शीर्षकहरू (All Headers)</h2>
+    <p style="font-size: 13px; color: #6b7280; margin-top: -5px;">कुनै पनि शीर्षकमा क्लिक गर्नुहोस्, त्यससँग सम्बन्धित PDF हरू तल देखिनेछन्।</p>
+    <div id="headersContainer">
+      <div class="empty">लोड हुँदैछ...</div>
+    </div>
+  </div>
 
   <div class="card">
     <h2>📁 नयाँ कोटि / सब-कोटि थप्नुहोस्</h2>
@@ -118,6 +141,7 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>'
 
 let allCategories = [];
 
+// कोटिहरू लोड गर्ने र ल्यान्डिङ पेजमा देखाउने
 async function loadCategories() {
   const r = await fetch('/get_categories');
   allCategories = await r.json();
@@ -125,10 +149,12 @@ async function loadCategories() {
   const mainCats = allCategories.filter(c => !c.parent_category);
   const subCats = allCategories.filter(c => c.parent_category);
 
+  // १. नयाँ थप्ने बक्सको लागि (मुख्य कोटि मात्र)
   const parentSel = $('#parentCategorySelect');
   parentSel.innerHTML = '<option value="">(यो मुख्य कोटि हो)</option>';
   mainCats.forEach(c => parentSel.innerHTML += `<option value="${esc(c.name)}">${esc(c.name)}</option>`);
 
+  // २. अपलोड र फिल्टरको ड्रपडाउनको लागि
   const fillSelect = (selector) => {
     const sel = $(selector);
     sel.innerHTML = '<option value="">— कोटि छान्नुहोस् —</option>';
@@ -142,6 +168,31 @@ async function loadCategories() {
   };
   fillSelect('#uploadCategory');
   fillSelect('#filterCategory');
+
+  // ३. ल्यान्डिङ पेजको हेडर (Chips) मा देखाउने
+  let headerHtml = '';
+  if (mainCats.length === 0) {
+    headerHtml = '<div class="empty">अझै कुनै कोटि थपिएको छैन।</div>';
+  } else {
+    mainCats.forEach(main => {
+      headerHtml += `<span class="header-chip" onclick="clickHeader('${esc(main.name)}')">📁 ${esc(main.name)}</span>`;
+      const subs = subCats.filter(s => s.parent_category === main.name);
+      subs.forEach(sub => {
+        headerHtml += `<br><span class="sub-header-chip" onclick="clickHeader('${esc(sub.name)}')">└─ ${esc(sub.name)}</span>`;
+      });
+      headerHtml += `<br><br>`;
+    });
+  }
+  $('#headersContainer').innerHTML = headerHtml;
+}
+
+// जब हेडरमा क्लिक गरिन्छ
+window.clickHeader = function(categoryName) {
+  $('#filterCategory').value = categoryName;
+  $('#uploadCategory').value = categoryName; // अपलोड गर्दा पनि यही सेलेक्ट होस्
+  loadPdfs(categoryName);
+  // पेजलाई तल स्क्रोल गरेर PDF लिस्ट देखाउने
+  document.getElementById('pdfListWrap').scrollIntoView({behavior: 'smooth', block: 'center'});
 }
 
 $('#addCategoryBtn').onclick = async () => {
@@ -193,7 +244,7 @@ $('#uploadBtn').onclick = async () => {
     const r = await fetch('/upload', { method:'POST', body: fd });
     const d = await r.json();
     alert(d.saved.length + ' फाइल अपलोड भयो!');
-    loadPdfs();
+    loadPdfs($('#filterCategory').value);
   } catch (e) { alert('त्रुटि: ' + e.message); }
   finally { $('#uploadBtn').disabled = false; }
 };
@@ -206,7 +257,7 @@ async function deletePdf(filename) {
     body: JSON.stringify({ password: pwd, filename: filename })
   });
   const d = await r.json();
-  if (r.ok) { alert(d.message); loadPdfs(); }
+  if (r.ok) { alert(d.message); loadPdfs($('#filterCategory').value); }
   else alert(d.error);
 }
 
