@@ -15,11 +15,9 @@ supabase = None
 if SUPABASE_URL and SUPABASE_KEY:
     try:
         supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-        print("✅ Supabase Client initialized successfully.")
+        print("✅ Supabase Client initialized.")
     except Exception as e:
-        print(f"❌ Failed to initialize Supabase: {e}")
-else:
-    print("⚠️ Supabase URL or KEY is missing in environment variables.")
+        print(f"❌ Failed to init Supabase: {e}")
 
 DELETE_PASSWORD = os.environ.get("DELETE_PASSWORD", "admin123")
 
@@ -32,8 +30,7 @@ SECTION_RE = re.compile(r"((?:धारा|दफा|नियम|उपनि�
 def search_in_pdf_bytes(pdf_bytes, query, max_results=30):
     results = []
     q_norm = _norm(query.strip())
-    if not q_norm:
-        return results
+    if not q_norm: return results
     try:
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         carried_section = None
@@ -44,38 +41,31 @@ def search_in_pdf_bytes(pdf_bytes, query, max_results=30):
             idx = 0
             while True:
                 pos = page_norm.find(q_norm, idx)
-                if pos == -1:
-                    break
+                if pos == -1: break
                 section = carried_section
                 for sp, sname in section_positions:
-                    if sp <= pos:
-                        section = sname
+                    if sp <= pos: section = sname
                 start = max(0, pos - 80)
                 end = min(len(page_text), pos + len(query) + 140)
                 snippet = page_text[start:end].replace("\n", " ").strip()
                 results.append({"page": page_num + 1, "section": section, "snippet": snippet})
                 idx = pos + 1
-                if len(results) >= max_results:
-                    break
-            if section_positions:
-                carried_section = section_positions[-1][1]
-            if len(results) >= max_results:
-                break
+                if len(results) >= max_results: break
+            if section_positions: carried_section = section_positions[-1][1]
+            if len(results) >= max_results: break
         doc.close()
     except Exception as e:
         print(f"[search_in_pdf] Error: {e}")
     return results
 
 def collect_results(query, filename=None):
-    if not supabase:
-        return []
+    if not supabase: return []
     try:
         if filename:
             res = supabase.table("documents").select("*").eq("name", filename).execute()
-            files = res.data
         else:
             res = supabase.table("documents").select("*").execute()
-            files = res.data
+        files = res.data
     except Exception as e:
         print("DB fetch error:", e)
         return []
@@ -102,18 +92,15 @@ def get_categories():
         res = supabase.table("categories").select("id, name, parent_category").execute()
         return jsonify(res.data)
     except Exception as e:
-        print("Fetch categories error:", e)
         return jsonify([])
 
 @app.route("/add_category", methods=["POST"])
 def add_category():
-    if not supabase: return jsonify({"error": "Database not connected"}), 500
+    if not supabase: return jsonify({"error": "DB not connected"}), 500
     data = request.get_json() or {}
     name = (data.get("name") or "").strip()
     parent = (data.get("parent") or "").strip() or None
-    
-    if not name:
-        return jsonify({"error": "पंक्तिको नाम खाली छ"}), 400
+    if not name: return jsonify({"error": "नाम खाली छ"}), 400
     try:
         supabase.table("categories").insert({"name": name, "parent_category": parent}).execute()
         return jsonify({"message": f"'{name}' सफलतापूर्वक थपियो"})
@@ -126,8 +113,7 @@ def list_pdfs():
     try:
         category = request.args.get("category", "")
         query = supabase.table("documents").select("name, category")
-        if category:
-            query = query.eq("category", category)
+        if category: query = query.eq("category", category)
         res = query.execute()
         return jsonify(res.data)
     except Exception as e:
@@ -135,7 +121,7 @@ def list_pdfs():
 
 @app.route("/upload", methods=["POST"])
 def upload():
-    if not supabase: return jsonify({"error": "Database not connected"}), 500
+    if not supabase: return jsonify({"error": "DB not connected"}), 500
     files = request.files.getlist("pdf_files")
     category = request.form.get("category", "अन्य")
     saved = []
@@ -143,44 +129,26 @@ def upload():
     
     for f in files:
         if f and f.filename and f.filename.lower().endswith(".pdf"):
-            safe_name = os.path.basename(f.filename)
-            # स्पेस भएको नामलाई अन्डरस्कोरले बदल्ने
-            safe_name = safe_name.replace(" ", "_")
-            
+            safe_name = os.path.basename(f.filename).replace(" ", "_")
             try:
-                file_data = f.read()
-                # १. स्टोरेजमा अपलोड गर्ने
-                res = supabase.storage.from_(BUCKET_NAME).upload(
-                    path=safe_name, 
-                    file=file_data, 
-                    file_options={"content-type": "application/pdf"}
+                supabase.storage.from_(BUCKET_NAME).upload(
+                    path=safe_name, file=f.read(), file_options={"content-type": "application/pdf", "upsert": "true"}
                 )
-                
-                # २. डेटाबेसमा सेभ गर्ने
-                supabase.table("documents").insert({"name": safe_name, "category": category}).execute()
+                existing = supabase.table("documents").select("id").eq("name", safe_name).execute()
+                if not existing.data:
+                    supabase.table("documents").insert({"name": safe_name, "category": category}).execute()
                 saved.append(safe_name)
             except Exception as e:
-                err_msg = str(e)
-                print(f"Upload error: {err_msg}")
-                
-                # यदि फाइल पहिले नै छ भने (Duplicate)
-                if "Duplicate" in err_msg or "already exists" in err_msg:
-                    try:
-                        supabase.table("documents").insert({"name": safe_name, "category": category}).execute()
-                        saved.append(safe_name)
-                    except:
-                        pass
-                else:
-                    errors.append(err_msg)
-                    
+                print(f"Upload error: {e}")
+                errors.append(str(e))
     return jsonify({"saved": saved, "errors": errors})
 
 @app.route("/delete_pdf", methods=["POST"])
 def delete_pdf():
-    if not supabase: return jsonify({"error": "Database not connected"}), 500
+    if not supabase: return jsonify({"error": "DB not connected"}), 500
     data = request.get_json() or {}
     if data.get("password", "") != DELETE_PASSWORD:
-        return jsonify({"error": "गलत पासवर्ड! PDF मेटाउन सकिएन।"}), 403
+        return jsonify({"error": "गलत पासवर्ड!"}), 403
     filename = data.get("filename", "")
     try:
         supabase.storage.from_(BUCKET_NAME).remove([filename])
@@ -191,7 +159,7 @@ def delete_pdf():
 
 @app.route("/pdf/<path:filename>")
 def serve_pdf(filename):
-    if not supabase: return "Database not connected", 500
+    if not supabase: return "DB not connected", 500
     try:
         pdf_data = supabase.storage.from_(BUCKET_NAME).download(filename)
         return pdf_data, 200, {'Content-Type': 'application/pdf'}
@@ -204,8 +172,7 @@ def search():
     query = (data.get("query") or "").strip()
     mode = data.get("mode", "all")
     filename = data.get("filename") if mode == "specific" else None
-    if not query:
-        return jsonify({"error": "खोज शब्द खाली छ।"}), 400
+    if not query: return jsonify({"error": "खाली छ"}), 400
     results = collect_results(query, filename=filename)
     return jsonify({"results": results, "query": query})
 
@@ -215,8 +182,7 @@ def chat():
     query = (data.get("query") or "").strip()
     api_key = (data.get("api_key") or "").strip()
     filename = (data.get("filename") or "").strip() or None
-    if not query:
-        return jsonify({"error": "प्रश्न खाली छ।"}), 400
+    if not query: return jsonify({"error": "प्रश्न खाली छ"}), 400
     results = collect_results(query, filename=filename)
     
     if api_key:
@@ -228,12 +194,7 @@ def chat():
         context = "\n".join(ctx_lines) if ctx_lines else "कुनै मिल्दो सामग्री भेटिएन।"
         prompt = f"तपाईं नेपाली कानुनी सहायक हुनुहुन्छ। तल दिइएको PDF सामग्रीको आधारमा प्रश्नको जवाफ दिनुहोस्।\n\nPDF सामग्री:\n{context}\n\nप्रश्न: {query}\n"
         
-        models_to_try = [
-            "gemini-1.5-flash", 
-            "gemini-1.5-flash-8b", 
-            "gemini-1.5-pro", 
-            "gemini-2.0-flash"
-        ]
+        models_to_try = ["gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-1.5-pro", "gemini-2.0-flash"]
         last_error = ""
         for model in models_to_try:
             try:
@@ -244,10 +205,8 @@ def chat():
                     if "candidates" in j and len(j["candidates"]) > 0:
                         return jsonify({"answer": j["candidates"][0]["content"]["parts"][0]["text"], "results": results, "mode": "gemini"})
                 else:
-                    try:
-                        last_error = r.json().get("error", {}).get("message", f"HTTP {r.status_code}")
-                    except:
-                        last_error = f"HTTP {r.status_code}"
+                    try: last_error = r.json().get("error", {}).get("message", f"HTTP {r.status_code}")
+                    except: last_error = f"HTTP {r.status_code}"
             except Exception as e:
                 last_error = str(e)
                 

@@ -17,6 +17,8 @@
   button{padding:9px 18px;background:#1e3a8a;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;font-weight:500;font-family:inherit}
   button:hover{background:#1e40af}
   button.small{padding:5px 12px;font-size:12px}
+  button.danger{background:#dc2626; padding:6px 12px; font-size:12px;}
+  button.danger:hover{background:#b91c1c}
   .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
   .search-box{border:2px solid #e5e7eb;border-radius:8px;padding:14px;background:#f9fafb}
@@ -31,23 +33,19 @@
   .badge{display:inline-block;background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600}
   .answer{background:#ecfdf5;border-left:4px solid #10b981;padding:14px;border-radius:6px;white-space:pre-wrap;line-height:1.7;font-size:14px}
   .empty{color:#9ca3af;font-style:italic;padding:20px;text-align:center}
-  .pdf-chip{background:#e0e7ff;color:#3730a3;padding:4px 10px;border-radius:20px;font-size:12px;display:inline-flex;align-items:center;gap:8px;margin:3px}
-  .pdf-chip button{background:#ef4444;padding:2px 6px;font-size:10px;border-radius:4px}
   
-  /* Horizontal Headers CSS */
-  #headersContainer { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
-  .header-chip {
-    display: inline-block; background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd;
-    padding: 8px 16px; border-radius: 20px; font-size: 14px; font-weight: bold;
-    cursor: pointer; transition: 0.2s;
-  }
-  .header-chip:hover { background: #bae6fd; transform: scale(1.02); }
-  .sub-header-chip {
-    display: inline-block; background: #f3f4f6; color: #4b5563; border: 1px solid #e5e7eb;
-    padding: 6px 14px; border-radius: 20px; font-size: 13px;
-    cursor: pointer; transition: 0.2s;
-  }
-  .sub-header-chip:hover { background: #e5e7eb; }
+  .pdf-chip{background:#e0e7ff;color:#3730a3;padding:8px 12px;border-radius:8px;font-size:14px;display:inline-flex;align-items:center;gap:12px;margin:5px; border:1px solid #c7d2fe;}
+  
+  /* Dropdown Menu CSS (स्क्रिनसट जस्तै) */
+  .nav-menu { display: flex; flex-wrap: wrap; gap: 15px; background: #fff; padding: 0; margin: 0; border-bottom: 1px solid #ddd; }
+  .nav-item { position: relative; cursor: pointer; padding: 12px 15px; font-weight: bold; color: #333; }
+  .nav-item:hover { background: #f0f4f8; color: #1e3a8a; }
+  .dropdown { display: none; position: absolute; top: 100%; left: 0; background: #fff; min-width: 200px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border-radius: 0 0 6px 6px; z-index: 100; border: 1px solid #ddd; }
+  .nav-item:hover .dropdown { display: block; }
+  .dropdown-item { padding: 10px 15px; border-bottom: 1px solid #eee; color: #333; transition: 0.2s; }
+  .dropdown-item:hover { background: #e0f2fe; color: #0369a1; }
+  .dropdown-item:last-child { border-bottom: none; }
+  
   @media(max-width:700px){.grid2{grid-template-columns:1fr}header input{width:150px}}
 </style>
 </head>
@@ -60,10 +58,9 @@
 
 <div class="container">
 
-  <div class="card">
-    <h2>📌 सबै शीर्षकहरू (All Headers)</h2>
-    <p style="font-size: 13px; color: #6b7280; margin-top: -5px;">कुनै पनि शीर्षकमा क्लिक गर्नुहोस्, त्यससँग सम्बन्धित PDF हरू तल देखिनेछन्।</p>
-    <div id="headersContainer">
+  <!-- हेडर मेनु (Dropdown) -->
+  <div class="card" style="padding:0; overflow:hidden;">
+    <div id="navMenu" class="nav-menu">
       <div class="empty">लोड हुँदैछ...</div>
     </div>
   </div>
@@ -71,7 +68,7 @@
   <div class="card">
     <h2>📁 नयाँ पंक्ति / उपपंक्ति थप्नुहोस्</h2>
     <div class="row">
-      <input type="text" id="newCategoryName" placeholder="पंक्तिको नाम (जस्तै: मालपोत सम्बन्धि ऐन)" style="flex:2;">
+      <input type="text" id="newCategoryName" placeholder="नाम (जस्तै: मालपोत सम्बन्धि ऐन)" style="flex:2;">
       <select id="parentCategorySelect" style="flex:1;">
         <option value="">(यो मुख्य पंक्ति हो)</option>
       </select>
@@ -147,6 +144,7 @@ async function loadCategories() {
   const mainCats = allCategories.filter(c => !c.parent_category);
   const subCats = allCategories.filter(c => c.parent_category);
 
+  // Dropdown बक्सहरू भर्ने
   const parentSel = $('#parentCategorySelect');
   parentSel.innerHTML = '<option value="">(यो मुख्य पंक्ति हो)</option>';
   mainCats.forEach(c => parentSel.innerHTML += `<option value="${esc(c.name)}">${esc(c.name)}</option>`);
@@ -165,20 +163,26 @@ async function loadCategories() {
   fillSelect('#uploadCategory');
   fillSelect('#filterCategory');
 
-  // Horizontal rendering without <br> tags
-  let headerHtml = '';
+  // माथिको हेडर मेनु (Dropdown) बनाउने
+  let navHtml = '';
   if (mainCats.length === 0) {
-    headerHtml = '<div class="empty">अझै कुनै पंक्ति थपिएको छैन।</div>';
+    navHtml = '<div class="empty">कुनै पंक्ति छैन।</div>';
   } else {
     mainCats.forEach(main => {
-      headerHtml += `<span class="header-chip" onclick="clickHeader('${esc(main.name)}')">📁 ${esc(main.name)}</span>`;
       const subs = subCats.filter(s => s.parent_category === main.name);
-      subs.forEach(sub => {
-        headerHtml += `<span class="sub-header-chip" onclick="clickHeader('${esc(sub.name)}')">└─ ${esc(sub.name)}</span>`;
-      });
+      
+      navHtml += `<div class="nav-item">${esc(main.name)}`;
+      if (subs.length > 0) {
+        navHtml += `<div class="dropdown">`;
+        subs.forEach(sub => {
+          navHtml += `<div class="dropdown-item" onclick="clickHeader('${esc(sub.name)}')">${esc(sub.name)}</div>`;
+        });
+        navHtml += `</div>`;
+      }
+      navHtml += `</div>`;
     });
   }
-  $('#headersContainer').innerHTML = headerHtml;
+  $('#navMenu').innerHTML = navHtml;
 }
 
 window.clickHeader = function(categoryName) {
@@ -191,7 +195,7 @@ window.clickHeader = function(categoryName) {
 $('#addCategoryBtn').onclick = async () => {
   const name = $('#newCategoryName').value.trim();
   const parent = $('#parentCategorySelect').value;
-  if (!name) return alert('पंक्तिको नाम लेख्नुहोस्');
+  if (!name) return alert('नाम लेख्नुहोस्');
   
   const r = await fetch('/add_category', {
     method:'POST', headers:{'Content-Type':'application/json'},
@@ -214,11 +218,13 @@ async function loadPdfs(category="") {
     $('#pdfListWrap').innerHTML = '<div class="empty">यहाँ कुनै PDF छैन।</div>';
     return;
   }
+  
+  // डिलिट बटन सहित PDF लिस्ट
   $('#pdfListWrap').innerHTML = files.map(f => `
-    <span class="pdf-chip">
-      📄 ${esc(f.name)} 
-      <button onclick="deletePdf('${esc(f.name)}')" title="डिलिट गर्नुहोस्">✖</button>
-    </span>
+    <div class="pdf-chip">
+      <span>📄 ${esc(f.name)}</span>
+      <button class="danger" onclick="deletePdf('${esc(f.name)}')">🗑️ मेटाउनुहोस्</button>
+    </div>
   `).join('');
 }
 
@@ -236,6 +242,7 @@ $('#uploadBtn').onclick = async () => {
   try {
     const r = await fetch('/upload', { method:'POST', body: fd });
     const d = await r.json();
+    
     if (d.errors && d.errors.length > 0) {
         alert(d.saved.length + ' फाइल अपलोड भयो।\n\nत्रुटि:\n' + d.errors.join('\n'));
     } else {
@@ -249,6 +256,7 @@ $('#uploadBtn').onclick = async () => {
 async function deletePdf(filename) {
   const pwd = prompt(`"${filename}" मेटाउन पासवर्ड हाल्नुहोस्:`);
   if (!pwd) return;
+  
   const r = await fetch('/delete_pdf', {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ password: pwd, filename: filename })
