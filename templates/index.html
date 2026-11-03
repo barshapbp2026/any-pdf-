@@ -69,11 +69,11 @@
   </div>
 
   <div class="card">
-    <h2>📁 नयाँ कोटि / सब-कोटि थप्नुहोस्</h2>
+    <h2>📁 नयाँ पंक्ति / उपपंक्ति थप्नुहोस्</h2>
     <div class="row">
-      <input type="text" id="newCategoryName" placeholder="कोटिको नाम (जस्तै: मालपोत सम्बन्धि ऐन)" style="flex:2;">
+      <input type="text" id="newCategoryName" placeholder="पंक्तिको नाम (जस्तै: मालपोत सम्बन्धि ऐन)" style="flex:2;">
       <select id="parentCategorySelect" style="flex:1;">
-        <option value="">(यो मुख्य कोटि हो)</option>
+        <option value="">(यो मुख्य पंक्ति हो)</option>
       </select>
       <button id="addCategoryBtn">थप्नुहोस्</button>
     </div>
@@ -89,7 +89,7 @@
   </div>
 
   <div class="card">
-    <h2>📄 कोटि अनुसार PDF हेर्नुहोस्</h2>
+    <h2>📄 पंक्ति अनुसार PDF हेर्नुहोस्</h2>
     <div class="row">
       <select id="filterCategory" style="flex:1;"></select>
       <button id="filterBtn">हेर्नुहोस्</button>
@@ -148,12 +148,12 @@ async function loadCategories() {
   const subCats = allCategories.filter(c => c.parent_category);
 
   const parentSel = $('#parentCategorySelect');
-  parentSel.innerHTML = '<option value="">(यो मुख्य कोटि हो)</option>';
+  parentSel.innerHTML = '<option value="">(यो मुख्य पंक्ति हो)</option>';
   mainCats.forEach(c => parentSel.innerHTML += `<option value="${esc(c.name)}">${esc(c.name)}</option>`);
 
   const fillSelect = (selector) => {
     const sel = $(selector);
-    sel.innerHTML = '<option value="">— कोटि छान्नुहोस् —</option>';
+    sel.innerHTML = '<option value="">— पंक्ति छान्नुहोस् —</option>';
     mainCats.forEach(main => {
       sel.innerHTML += `<option value="${esc(main.name)}" style="font-weight:bold; background:#f0f9ff">📁 ${esc(main.name)}</option>`;
       const subs = subCats.filter(s => s.parent_category === main.name);
@@ -168,7 +168,7 @@ async function loadCategories() {
   // Horizontal rendering without <br> tags
   let headerHtml = '';
   if (mainCats.length === 0) {
-    headerHtml = '<div class="empty">अझै कुनै कोटि थपिएको छैन।</div>';
+    headerHtml = '<div class="empty">अझै कुनै पंक्ति थपिएको छैन।</div>';
   } else {
     mainCats.forEach(main => {
       headerHtml += `<span class="header-chip" onclick="clickHeader('${esc(main.name)}')">📁 ${esc(main.name)}</span>`;
@@ -191,7 +191,7 @@ window.clickHeader = function(categoryName) {
 $('#addCategoryBtn').onclick = async () => {
   const name = $('#newCategoryName').value.trim();
   const parent = $('#parentCategorySelect').value;
-  if (!name) return alert('कोटिको नाम लेख्नुहोस्');
+  if (!name) return alert('पंक्तिको नाम लेख्नुहोस्');
   
   const r = await fetch('/add_category', {
     method:'POST', headers:{'Content-Type':'application/json'},
@@ -226,7 +226,7 @@ $('#uploadBtn').onclick = async () => {
   const files = $('#pdfFiles').files;
   const category = $('#uploadCategory').value;
   if (!files.length) return alert('PDF छान्नुहोस्');
-  if (!category) return alert('कोटि छान्नुहोस्');
+  if (!category) return alert('पंक्ति छान्नुहोस्');
   
   const fd = new FormData();
   for (const f of files) fd.append('pdf_files', f);

@@ -113,7 +113,7 @@ def add_category():
     parent = (data.get("parent") or "").strip() or None
     
     if not name:
-        return jsonify({"error": "कोटिको नाम खाली छ"}), 400
+        return jsonify({"error": "पंक्तिको नाम खाली छ"}), 400
     try:
         supabase.table("categories").insert({"name": name, "parent_category": parent}).execute()
         return jsonify({"message": f"'{name}' सफलतापूर्वक थपियो"})
