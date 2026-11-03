@@ -127,7 +127,12 @@ def upload():
         if f and f.filename and f.filename.lower().endswith(".pdf"):
             safe_name = os.path.basename(f.filename)
             try:
-                supabase.storage.from_(BUCKET_NAME).upload(path=safe_name, file=f.read(), file_options={"content-type": "application/pdf"})
+                # अपलोड गर्दा content-type दिनुपर्छ
+                supabase.storage.from_(BUCKET_NAME).upload(
+                    path=safe_name, 
+                    file=f.read(), 
+                    file_options={"content-type": "application/pdf"}
+                )
                 supabase.table("documents").insert({"name": safe_name, "category": category}).execute()
                 saved.append(safe_name)
             except Exception as e:
@@ -185,7 +190,13 @@ def chat():
         context = "\n".join(ctx_lines) if ctx_lines else "कुनै मिल्दो सामग्री भेटिएन।"
         prompt = f"तपाईं नेपाली कानुनी सहायक हुनुहुन्छ। तल दिइएको PDF सामग्रीको आधारमा प्रश्नको जवाफ दिनुहोस्।\n\nPDF सामग्री:\n{context}\n\nप्रश्न: {query}\n"
         
-        models_to_try = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-2.0-flash-exp"]
+        # गुगलले सपोर्ट गर्ने नयाँ मोडेलहरू (v1beta API)
+        models_to_try = [
+            "gemini-1.5-flash", 
+            "gemini-1.5-flash-8b", 
+            "gemini-1.5-pro", 
+            "gemini-2.0-flash"
+        ]
         last_error = ""
         for model in models_to_try:
             try:
@@ -195,6 +206,11 @@ def chat():
                     j = r.json()
                     if "candidates" in j and len(j["candidates"]) > 0:
                         return jsonify({"answer": j["candidates"][0]["content"]["parts"][0]["text"], "results": results, "mode": "gemini"})
+                else:
+                    try:
+                        last_error = r.json().get("error", {}).get("message", f"HTTP {r.status_code}")
+                    except:
+                        last_error = f"HTTP {r.status_code}"
             except Exception as e:
                 last_error = str(e)
                 
