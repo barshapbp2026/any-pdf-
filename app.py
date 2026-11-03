@@ -9,8 +9,17 @@ app = Flask(__name__)
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 BUCKET_NAME = "pdfs"
+
+supabase = None
+if SUPABASE_URL and SUPABASE_KEY:
+    try:
+        supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        print("✅ Supabase Client initialized successfully.")
+    except Exception as e:
+        print(f"❌ Failed to initialize Supabase: {e}")
+else:
+    print("⚠️ Supabase URL or KEY is missing in environment variables.")
 
 DELETE_PASSWORD = os.environ.get("DELETE_PASSWORD", "admin123")
 
@@ -86,6 +95,7 @@ def index():
 
 @app.route("/get_categories")
 def get_categories():
+    if not supabase: return jsonify([])
     try:
         res = supabase.table("categories").select("id, name, parent_category").execute()
         return jsonify(res.data)
@@ -94,6 +104,7 @@ def get_categories():
 
 @app.route("/add_category", methods=["POST"])
 def add_category():
+    if not supabase: return jsonify({"error": "Database not connected"}), 500
     data = request.get_json() or {}
     name = (data.get("name") or "").strip()
     parent = (data.get("parent") or "").strip() or None
@@ -108,6 +119,7 @@ def add_category():
 
 @app.route("/list_pdfs")
 def list_pdfs():
+    if not supabase: return jsonify([])
     try:
         category = request.args.get("category", "")
         query = supabase.table("documents").select("name, category")
@@ -120,6 +132,7 @@ def list_pdfs():
 
 @app.route("/upload", methods=["POST"])
 def upload():
+    if not supabase: return jsonify({"error": "Database not connected"}), 500
     files = request.files.getlist("pdf_files")
     category = request.form.get("category", "अन्य")
     saved = []
@@ -141,6 +154,7 @@ def upload():
 
 @app.route("/delete_pdf", methods=["POST"])
 def delete_pdf():
+    if not supabase: return jsonify({"error": "Database not connected"}), 500
     data = request.get_json() or {}
     if data.get("password", "") != DELETE_PASSWORD:
         return jsonify({"error": "गलत पासवर्ड! PDF मेटाउन सकिएन।"}), 403
@@ -173,6 +187,7 @@ def search():
 
 @app.route("/add_category", methods=["POST"])
 def add_category():
+    if not supabase: return jsonify({"error": "Database not connected"}), 500
     data = request.get_json() or {}
     name = (data.get("name") or "").strip()
     parent = (data.get("parent") or "").strip() or None
