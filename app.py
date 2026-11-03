@@ -144,25 +144,35 @@ def upload():
     for f in files:
         if f and f.filename and f.filename.lower().endswith(".pdf"):
             safe_name = os.path.basename(f.filename)
+            # स्पेस भएको नामलाई अन्डरस्कोरले बदल्ने
+            safe_name = safe_name.replace(" ", "_")
+            
             try:
-                # upsert=true ले एउटै नामको फाइल भएमा Overwrite गर्छ
-                supabase.storage.from_(BUCKET_NAME).upload(
+                file_data = f.read()
+                # १. स्टोरेजमा अपलोड गर्ने
+                res = supabase.storage.from_(BUCKET_NAME).upload(
                     path=safe_name, 
-                    file=f.read(), 
-                    file_options={"content-type": "application/pdf", "upsert": "true"}
+                    file=file_data, 
+                    file_options={"content-type": "application/pdf"}
                 )
-                # डेटाबेसमा नाम सेभ गर्ने (यदि पहिले नै छ भने अपडेट गर्ने)
-                existing = supabase.table("documents").select("id").eq("name", safe_name).execute()
-                if not existing.data:
-                    supabase.table("documents").insert({"name": safe_name, "category": category}).execute()
-                    
+                
+                # २. डेटाबेसमा सेभ गर्ने
+                supabase.table("documents").insert({"name": safe_name, "category": category}).execute()
                 saved.append(safe_name)
             except Exception as e:
-                print(f"Upload error: {e}")
-                errors.append(str(e))
-        else:
-            errors.append(f"'{f.filename}' PDF फाइल होइन।")
-            
+                err_msg = str(e)
+                print(f"Upload error: {err_msg}")
+                
+                # यदि फाइल पहिले नै छ भने (Duplicate)
+                if "Duplicate" in err_msg or "already exists" in err_msg:
+                    try:
+                        supabase.table("documents").insert({"name": safe_name, "category": category}).execute()
+                        saved.append(safe_name)
+                    except:
+                        pass
+                else:
+                    errors.append(err_msg)
+                    
     return jsonify({"saved": saved, "errors": errors})
 
 @app.route("/delete_pdf", methods=["POST"])
