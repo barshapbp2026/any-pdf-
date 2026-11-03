@@ -236,7 +236,11 @@ $('#uploadBtn').onclick = async () => {
   try {
     const r = await fetch('/upload', { method:'POST', body: fd });
     const d = await r.json();
-    alert(d.saved.length + ' फाइल अपलोड भयो!');
+    if (d.errors && d.errors.length > 0) {
+        alert(d.saved.length + ' फाइल अपलोड भयो।\n\nत्रुटि:\n' + d.errors.join('\n'));
+    } else {
+        alert(d.saved.length + ' फाइल अपलोड भयो!');
+    }
     loadPdfs($('#filterCategory').value);
   } catch (e) { alert('त्रुटि: ' + e.message); }
   finally { $('#uploadBtn').disabled = false; }

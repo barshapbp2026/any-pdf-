@@ -139,20 +139,31 @@ def upload():
     files = request.files.getlist("pdf_files")
     category = request.form.get("category", "अन्य")
     saved = []
+    errors = []
+    
     for f in files:
         if f and f.filename and f.filename.lower().endswith(".pdf"):
             safe_name = os.path.basename(f.filename)
             try:
+                # upsert=true ले एउटै नामको फाइल भएमा Overwrite गर्छ
                 supabase.storage.from_(BUCKET_NAME).upload(
                     path=safe_name, 
                     file=f.read(), 
-                    file_options={"content-type": "application/pdf"}
+                    file_options={"content-type": "application/pdf", "upsert": "true"}
                 )
-                supabase.table("documents").insert({"name": safe_name, "category": category}).execute()
+                # डेटाबेसमा नाम सेभ गर्ने (यदि पहिले नै छ भने अपडेट गर्ने)
+                existing = supabase.table("documents").select("id").eq("name", safe_name).execute()
+                if not existing.data:
+                    supabase.table("documents").insert({"name": safe_name, "category": category}).execute()
+                    
                 saved.append(safe_name)
             except Exception as e:
                 print(f"Upload error: {e}")
-    return jsonify({"saved": saved})
+                errors.append(str(e))
+        else:
+            errors.append(f"'{f.filename}' PDF फाइल होइन।")
+            
+    return jsonify({"saved": saved, "errors": errors})
 
 @app.route("/delete_pdf", methods=["POST"])
 def delete_pdf():
