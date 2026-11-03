@@ -119,6 +119,8 @@ def list_pdfs():
     except Exception as e:
         return jsonify([])
 
+import uuid  # फाइलको नाम बनाउन यो लाइब्रेरी चाहिन्छ
+
 @app.route("/upload", methods=["POST"])
 def upload():
     if not supabase: return jsonify({"error": "DB not connected"}), 500
@@ -129,18 +131,34 @@ def upload():
     
     for f in files:
         if f and f.filename and f.filename.lower().endswith(".pdf"):
-            safe_name = os.path.basename(f.filename).replace(" ", "_")
+            original_name = os.path.basename(f.filename)  # नेपाली नाम (Display गर्न)
+            
+            # Supabase को लागि सुरक्षित नाम (UUID प्रयोग गर्ने)
+            # यसले गर्दा नेपाली नामको समस्या आउँदैन
+            safe_key = f"{uuid.uuid4().hex}.pdf"  
+            
             try:
+                # १. स्टोरेजमा सुरक्षित नाम (safe_key) ले अपलोड गर्ने
                 supabase.storage.from_(BUCKET_NAME).upload(
-                    path=safe_name, file=f.read(), file_options={"content-type": "application/pdf", "upsert": "true"}
+                    path=safe_key, 
+                    file=f.read(), 
+                    file_options={"content-type": "application/pdf", "upsert": "true"}
                 )
-                existing = supabase.table("documents").select("id").eq("name", safe_name).execute()
+                
+                # २. डेटाबेसमा भने असली नेपाली नाम (original_name) राख्ने
+                existing = supabase.table("documents").select("id").eq("name", original_name).execute()
                 if not existing.data:
-                    supabase.table("documents").insert({"name": safe_name, "category": category}).execute()
-                saved.append(safe_name)
+                    supabase.table("documents").insert({
+                        "name": original_name, 
+                        "category": category,
+                        "storage_key": safe_key
+                    }).execute()
+                saved.append(original_name)
+                
             except Exception as e:
                 print(f"Upload error: {e}")
                 errors.append(str(e))
+                
     return jsonify({"saved": saved, "errors": errors})
 
 @app.route("/delete_pdf", methods=["POST"])
@@ -149,9 +167,18 @@ def delete_pdf():
     data = request.get_json() or {}
     if data.get("password", "") != DELETE_PASSWORD:
         return jsonify({"error": "गलत पासवर्ड!"}), 403
-    filename = data.get("filename", "")
+        
+    filename = data.get("filename", "")  # यो नेपाली नाम हो
+    
     try:
-        supabase.storage.from_(BUCKET_NAME).remove([filename])
+        # डेटाबेसबाट storage_key पत्ता लगाउने
+        res = supabase.table("documents").select("storage_key").eq("name", filename).execute()
+        if res.data:
+            storage_key = res.data[0]['storage_key']
+            # स्टोरेजबाट हटाउने
+            supabase.storage.from_(BUCKET_NAME).remove([storage_key])
+            
+        # डेटाबेसबाट हटाउने
         supabase.table("documents").delete().eq("name", filename).execute()
         return jsonify({"message": "PDF सफलतापूर्वक मेटाइयो"})
     except Exception as e:
@@ -161,9 +188,16 @@ def delete_pdf():
 def serve_pdf(filename):
     if not supabase: return "DB not connected", 500
     try:
-        pdf_data = supabase.storage.from_(BUCKET_NAME).download(filename)
+        # डेटाबेसबाट storage_key पत्ता लगाउने
+        res = supabase.table("documents").select("storage_key").eq("name", filename).execute()
+        if not res.data:
+            return "File not found in DB", 404
+            
+        storage_key = res.data[0]['storage_key']
+        pdf_data = supabase.storage.from_(BUCKET_NAME).download(storage_key)
         return pdf_data, 200, {'Content-Type': 'application/pdf'}
-    except:
+    except Exception as e:
+        print(f"serve_pdf error: {e}")
         return "File not found", 404
 
 @app.route("/search", methods=["POST"])
