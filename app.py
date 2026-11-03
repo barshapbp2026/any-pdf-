@@ -171,14 +171,20 @@ def search():
     results = collect_results(query, filename=filename)
     return jsonify({"results": results, "query": query})
 
-@app.route("/chat", methods=["POST"])
-def chat():
+@app.route("/add_category", methods=["POST"])
+def add_category():
     data = request.get_json() or {}
-    query = (data.get("query") or "").strip()
-    api_key = (data.get("api_key") or "").strip()
-    filename = (data.get("filename") or "").strip() or None
-    if not query:
-        return jsonify({"error": "प्रश्न खाली छ।"}), 400
+    name = (data.get("name") or "").strip()
+    parent = (data.get("parent") or "").strip() or None
+    
+    if not name:
+        return jsonify({"error": "कोटिको नाम खाली छ"}), 400
+    try:
+        supabase.table("categories").insert({"name": name, "parent_category": parent}).execute()
+        return jsonify({"message": f"'{name}' सफलतापूर्वक थपियो"})
+    except Exception as e:
+        # यहाँ असली एरर देखाउने
+        return jsonify({"error": f"त्रुटि: {str(e)}"}), 400 
     results = collect_results(query, filename=filename)
     
     if api_key:
