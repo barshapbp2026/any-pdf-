@@ -67,6 +67,8 @@ def search_in_pdf_bytes(pdf_bytes, query, max_results=30):
     return results
 
 def collect_results(query, filename=None):
+    if not supabase:
+        return []
     try:
         if filename:
             res = supabase.table("documents").select("*").eq("name", filename).execute()
@@ -86,7 +88,7 @@ def collect_results(query, filename=None):
             if matches:
                 out.append({"filename": f['name'], "matches": matches})
         except Exception as e:
-            print(f"Error: {f['name']}: {e}")
+            print(f"Error reading {f['name']}: {e}")
     return out
 
 @app.route("/")
@@ -99,7 +101,8 @@ def get_categories():
     try:
         res = supabase.table("categories").select("id, name, parent_category").execute()
         return jsonify(res.data)
-    except:
+    except Exception as e:
+        print("Fetch categories error:", e)
         return jsonify([])
 
 @app.route("/add_category", methods=["POST"])
@@ -115,7 +118,7 @@ def add_category():
         supabase.table("categories").insert({"name": name, "parent_category": parent}).execute()
         return jsonify({"message": f"'{name}' सफलतापूर्वक थपियो"})
     except Exception as e:
-        return jsonify({"error": "यो कोटि पहिले नै छ वा त्रुटि भयो"}), 400
+        return jsonify({"error": f"त्रुटि: {str(e)}"}), 400
 
 @app.route("/list_pdfs")
 def list_pdfs():
@@ -140,7 +143,6 @@ def upload():
         if f and f.filename and f.filename.lower().endswith(".pdf"):
             safe_name = os.path.basename(f.filename)
             try:
-                # अपलोड गर्दा content-type दिनुपर्छ
                 supabase.storage.from_(BUCKET_NAME).upload(
                     path=safe_name, 
                     file=f.read(), 
@@ -168,6 +170,7 @@ def delete_pdf():
 
 @app.route("/pdf/<path:filename>")
 def serve_pdf(filename):
+    if not supabase: return "Database not connected", 500
     try:
         pdf_data = supabase.storage.from_(BUCKET_NAME).download(filename)
         return pdf_data, 200, {'Content-Type': 'application/pdf'}
@@ -185,21 +188,14 @@ def search():
     results = collect_results(query, filename=filename)
     return jsonify({"results": results, "query": query})
 
-@app.route("/add_category", methods=["POST"])
-def add_category():
-    if not supabase: return jsonify({"error": "Database not connected"}), 500
+@app.route("/chat", methods=["POST"])
+def chat():
     data = request.get_json() or {}
-    name = (data.get("name") or "").strip()
-    parent = (data.get("parent") or "").strip() or None
-    
-    if not name:
-        return jsonify({"error": "कोटिको नाम खाली छ"}), 400
-    try:
-        supabase.table("categories").insert({"name": name, "parent_category": parent}).execute()
-        return jsonify({"message": f"'{name}' सफलतापूर्वक थपियो"})
-    except Exception as e:
-        # यहाँ असली एरर देखाउने
-        return jsonify({"error": f"त्रुटि: {str(e)}"}), 400 
+    query = (data.get("query") or "").strip()
+    api_key = (data.get("api_key") or "").strip()
+    filename = (data.get("filename") or "").strip() or None
+    if not query:
+        return jsonify({"error": "प्रश्न खाली छ।"}), 400
     results = collect_results(query, filename=filename)
     
     if api_key:
@@ -211,7 +207,6 @@ def add_category():
         context = "\n".join(ctx_lines) if ctx_lines else "कुनै मिल्दो सामग्री भेटिएन।"
         prompt = f"तपाईं नेपाली कानुनी सहायक हुनुहुन्छ। तल दिइएको PDF सामग्रीको आधारमा प्रश्नको जवाफ दिनुहोस्।\n\nPDF सामग्री:\n{context}\n\nप्रश्न: {query}\n"
         
-        # गुगलले सपोर्ट गर्ने नयाँ मोडेलहरू (v1beta API)
         models_to_try = [
             "gemini-1.5-flash", 
             "gemini-1.5-flash-8b", 
