@@ -1,5 +1,4 @@
 Flask
 PyMuPDF
 requests
-supabase
 gunicorn

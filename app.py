@@ -6,7 +6,7 @@ import fitz
 
 app = Flask(__name__)
 
-# तपाईंको GitHub युजरनेम र रिपोजिटरीको नाम
+# तपाईंको GitHub रिपोजिटरी
 GITHUB_REPO = "barshapbp2026/any-pdf-"
 GITHUB_BRANCH = "main"
 
@@ -48,8 +48,7 @@ def search_in_pdf_bytes(pdf_bytes, query, max_results=30):
     return results
 
 def get_github_pdfs():
-    """GitHub को pdfs फोल्डर र त्यस भित्रका सब-फोल्डरहरूबाट PDF खोज्ने"""
-    # recursive=1 ले सबै सब-फोल्डर भित्रका फाइलहरू पनि ल्याउँछ
+    """GitHub को pdfs फोल्डर र सब-फोल्डरहरूबाट PDF खोज्ने"""
     url = f"https://api.github.com/repos/{GITHUB_REPO}/git/trees/{GITHUB_BRANCH}?recursive=1"
     try:
         res = requests.get(url)
@@ -57,26 +56,24 @@ def get_github_pdfs():
             tree = res.json().get("tree", [])
             pdfs = []
             for item in tree:
-                # यदि फाइल PDF हो र pdfs/ भित्र छ भने मात्र लिस्टमा राख्ने
                 if item["type"] == "blob" and item["path"].startswith("pdfs/") and item["path"].lower().endswith(".pdf"):
-                    # 'pdfs/' भाग हटाएर सफा नाम राख्ने (जस्तै: subfolder/file.pdf)
                     clean_name = item["path"].replace("pdfs/", "", 1)
                     pdfs.append(clean_name)
-            return pdfs
+            return sorted(pdfs)
     except Exception as e:
         print("GitHub API error:", e)
     return []
 
 def get_pdf_bytes_from_github(filename):
-    """GitHub बाट सब-फोल्डर भित्रको PDF फाइल डाउनलोड गर्ने"""
-    # filename जस्तै: subfolder/file.pdf हुन्छ, त्यसैले बाटोमा pdfs/ थप्नुपर्छ
-    # URL Encode गर्नुपर्छ किनकि स्पेस वा नेपाली अक्षर हुन सक्छ
+    """GitHub बाट सिधै PDF फाइल डाउनलोड गर्ने"""
     safe_path = requests.utils.quote(f"pdfs/{filename}")
     url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{safe_path}"
-    
-    res = requests.get(url)
-    if res.status_code == 200:
-        return res.content
+    try:
+        res = requests.get(url)
+        if res.status_code == 200:
+            return res.content
+    except:
+        pass
     return None
 
 def collect_results(query, filename=None):
@@ -125,6 +122,7 @@ def chat():
     api_key = (data.get("api_key") or "").strip()
     filename = (data.get("filename") or "").strip() or None
     if not query: return jsonify({"error": "प्रश्न खाली छ।"}), 400
+    
     results = collect_results(query, filename=filename)
     
     if api_key:
