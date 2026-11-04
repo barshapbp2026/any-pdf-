@@ -3,23 +3,12 @@ import re
 import requests
 from flask import Flask, render_template, request, jsonify
 import fitz
-from supabase import create_client, Client
 
 app = Flask(__name__)
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
-BUCKET_NAME = "pdfs"
-
-supabase = None
-if SUPABASE_URL and SUPABASE_KEY:
-    try:
-        supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-        print("✅ Supabase Client initialized.")
-    except Exception as e:
-        print(f"❌ Failed to init Supabase: {e}")
-
-DELETE_PASSWORD = os.environ.get("DELETE_PASSWORD", "admin123")
+# तपाईंको GitHub युजरनेम र रिपोजिटरीको नाम
+GITHUB_REPO = "barshapbp2026/any-pdf-"
+GITHUB_BRANCH = "main"
 
 NEPALI_DIGITS = str.maketrans("०१२३४५६७८९", "0123456789")
 def _norm(t):
@@ -58,147 +47,66 @@ def search_in_pdf_bytes(pdf_bytes, query, max_results=30):
         print(f"[search_in_pdf] Error: {e}")
     return results
 
-def collect_results(query, filename=None):
-    if not supabase: return []
+def get_github_pdfs():
+    """GitHub को pdfs फोल्डर र त्यस भित्रका सब-फोल्डरहरूबाट PDF खोज्ने"""
+    # recursive=1 ले सबै सब-फोल्डर भित्रका फाइलहरू पनि ल्याउँछ
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/git/trees/{GITHUB_BRANCH}?recursive=1"
     try:
-        if filename:
-            res = supabase.table("documents").select("*").eq("name", filename).execute()
-        else:
-            res = supabase.table("documents").select("*").execute()
-        files = res.data
+        res = requests.get(url)
+        if res.status_code == 200:
+            tree = res.json().get("tree", [])
+            pdfs = []
+            for item in tree:
+                # यदि फाइल PDF हो र pdfs/ भित्र छ भने मात्र लिस्टमा राख्ने
+                if item["type"] == "blob" and item["path"].startswith("pdfs/") and item["path"].lower().endswith(".pdf"):
+                    # 'pdfs/' भाग हटाएर सफा नाम राख्ने (जस्तै: subfolder/file.pdf)
+                    clean_name = item["path"].replace("pdfs/", "", 1)
+                    pdfs.append(clean_name)
+            return pdfs
     except Exception as e:
-        print("DB fetch error:", e)
-        return []
-        
+        print("GitHub API error:", e)
+    return []
+
+def get_pdf_bytes_from_github(filename):
+    """GitHub बाट सब-फोल्डर भित्रको PDF फाइल डाउनलोड गर्ने"""
+    # filename जस्तै: subfolder/file.pdf हुन्छ, त्यसैले बाटोमा pdfs/ थप्नुपर्छ
+    # URL Encode गर्नुपर्छ किनकि स्पेस वा नेपाली अक्षर हुन सक्छ
+    safe_path = requests.utils.quote(f"pdfs/{filename}")
+    url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{safe_path}"
+    
+    res = requests.get(url)
+    if res.status_code == 200:
+        return res.content
+    return None
+
+def collect_results(query, filename=None):
+    files = [filename] if filename else get_github_pdfs()
     out = []
     for f in files:
         try:
-            pdf_data = supabase.storage.from_(BUCKET_NAME).download(f['name'])
-            matches = search_in_pdf_bytes(pdf_data, query)
-            if matches:
-                out.append({"filename": f['name'], "matches": matches})
+            pdf_data = get_pdf_bytes_from_github(f)
+            if pdf_data:
+                matches = search_in_pdf_bytes(pdf_data, query)
+                if matches:
+                    out.append({"filename": f, "matches": matches})
         except Exception as e:
-            print(f"Error reading {f['name']}: {e}")
+            print(f"Error reading {f}: {e}")
     return out
 
 @app.route("/")
 def index():
     return render_template("index.html")
 
-@app.route("/get_categories")
-def get_categories():
-    if not supabase: return jsonify([])
-    try:
-        res = supabase.table("categories").select("id, name, parent_category").execute()
-        return jsonify(res.data)
-    except Exception as e:
-        return jsonify([])
-
-@app.route("/add_category", methods=["POST"])
-def add_category():
-    if not supabase: return jsonify({"error": "DB not connected"}), 500
-    data = request.get_json() or {}
-    name = (data.get("name") or "").strip()
-    parent = (data.get("parent") or "").strip() or None
-    if not name: return jsonify({"error": "नाम खाली छ"}), 400
-    try:
-        supabase.table("categories").insert({"name": name, "parent_category": parent}).execute()
-        return jsonify({"message": f"'{name}' सफलतापूर्वक थपियो"})
-    except Exception as e:
-        return jsonify({"error": f"त्रुटि: {str(e)}"}), 400
-
 @app.route("/list_pdfs")
 def list_pdfs():
-    if not supabase: return jsonify([])
-    try:
-        category = request.args.get("category", "")
-        query = supabase.table("documents").select("name, category")
-        if category: query = query.eq("category", category)
-        res = query.execute()
-        return jsonify(res.data)
-    except Exception as e:
-        return jsonify([])
-
-import uuid  # फाइलको नाम बनाउन यो लाइब्रेरी चाहिन्छ
-
-@app.route("/upload", methods=["POST"])
-def upload():
-    if not supabase: return jsonify({"error": "DB not connected"}), 500
-    files = request.files.getlist("pdf_files")
-    category = request.form.get("category", "अन्य")
-    saved = []
-    errors = []
-    
-    for f in files:
-        if f and f.filename and f.filename.lower().endswith(".pdf"):
-            original_name = os.path.basename(f.filename)  # नेपाली नाम (Display गर्न)
-            
-            # Supabase को लागि सुरक्षित नाम (UUID प्रयोग गर्ने)
-            # यसले गर्दा नेपाली नामको समस्या आउँदैन
-            safe_key = f"{uuid.uuid4().hex}.pdf"  
-            
-            try:
-                # १. स्टोरेजमा सुरक्षित नाम (safe_key) ले अपलोड गर्ने
-                supabase.storage.from_(BUCKET_NAME).upload(
-                    path=safe_key, 
-                    file=f.read(), 
-                    file_options={"content-type": "application/pdf", "upsert": "true"}
-                )
-                
-                # २. डेटाबेसमा भने असली नेपाली नाम (original_name) राख्ने
-                existing = supabase.table("documents").select("id").eq("name", original_name).execute()
-                if not existing.data:
-                    supabase.table("documents").insert({
-                        "name": original_name, 
-                        "category": category,
-                        "storage_key": safe_key
-                    }).execute()
-                saved.append(original_name)
-                
-            except Exception as e:
-                print(f"Upload error: {e}")
-                errors.append(str(e))
-                
-    return jsonify({"saved": saved, "errors": errors})
-
-@app.route("/delete_pdf", methods=["POST"])
-def delete_pdf():
-    if not supabase: return jsonify({"error": "DB not connected"}), 500
-    data = request.get_json() or {}
-    if data.get("password", "") != DELETE_PASSWORD:
-        return jsonify({"error": "गलत पासवर्ड!"}), 403
-        
-    filename = data.get("filename", "")  # यो नेपाली नाम हो
-    
-    try:
-        # डेटाबेसबाट storage_key पत्ता लगाउने
-        res = supabase.table("documents").select("storage_key").eq("name", filename).execute()
-        if res.data:
-            storage_key = res.data[0]['storage_key']
-            # स्टोरेजबाट हटाउने
-            supabase.storage.from_(BUCKET_NAME).remove([storage_key])
-            
-        # डेटाबेसबाट हटाउने
-        supabase.table("documents").delete().eq("name", filename).execute()
-        return jsonify({"message": "PDF सफलतापूर्वक मेटाइयो"})
-    except Exception as e:
-        return jsonify({"error": f"मेटाउन सकिएन: {e}"}), 500
+    return jsonify(get_github_pdfs())
 
 @app.route("/pdf/<path:filename>")
 def serve_pdf(filename):
-    if not supabase: return "DB not connected", 500
-    try:
-        # डेटाबेसबाट storage_key पत्ता लगाउने
-        res = supabase.table("documents").select("storage_key").eq("name", filename).execute()
-        if not res.data:
-            return "File not found in DB", 404
-            
-        storage_key = res.data[0]['storage_key']
-        pdf_data = supabase.storage.from_(BUCKET_NAME).download(storage_key)
+    pdf_data = get_pdf_bytes_from_github(filename)
+    if pdf_data:
         return pdf_data, 200, {'Content-Type': 'application/pdf'}
-    except Exception as e:
-        print(f"serve_pdf error: {e}")
-        return "File not found", 404
+    return "File not found", 404
 
 @app.route("/search", methods=["POST"])
 def search():
@@ -206,7 +114,7 @@ def search():
     query = (data.get("query") or "").strip()
     mode = data.get("mode", "all")
     filename = data.get("filename") if mode == "specific" else None
-    if not query: return jsonify({"error": "खाली छ"}), 400
+    if not query: return jsonify({"error": "खोज शब्द खाली छ।"}), 400
     results = collect_results(query, filename=filename)
     return jsonify({"results": results, "query": query})
 
@@ -216,7 +124,7 @@ def chat():
     query = (data.get("query") or "").strip()
     api_key = (data.get("api_key") or "").strip()
     filename = (data.get("filename") or "").strip() or None
-    if not query: return jsonify({"error": "प्रश्न खाली छ"}), 400
+    if not query: return jsonify({"error": "प्रश्न खाली छ।"}), 400
     results = collect_results(query, filename=filename)
     
     if api_key:
