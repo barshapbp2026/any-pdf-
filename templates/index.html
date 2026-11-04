@@ -9,11 +9,11 @@
   body{font-family:'Kalimati','Mangal',Arial,sans-serif;margin:0;background:#f5f7fa;color:#1f2937}
   header{background:linear-gradient(135deg,#1e3a8a,#3b82f6);color:#fff;padding:14px 24px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;box-shadow:0 2px 10px rgba(0,0,0,.15)}
   header h1{margin:0;font-size:18px;font-weight:600}
-  header input{font-family:Consolas, Monaco, monospace !important;padding:9px 12px;border-radius:6px;border:none;width:250px;font-size:13px;color:#333}
+  header input{font-family:Consolas, monospace !important;padding:9px 12px;border-radius:6px;border:none;width:250px;font-size:13px;color:#333}
   .container{max-width:1050px;margin:24px auto;padding:0 16px}
   .card{background:#fff;border-radius:10px;padding:20px;margin-bottom:18px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
   .card h2{margin:0 0 14px;font-size:16px;color:#1e3a8a;border-bottom:2px solid #e5e7eb;padding-bottom:8px}
-  input[type=text],input[type=password],select{padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;font-family:inherit}
+  input[type=text],select{padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;font-family:inherit}
   button{padding:9px 18px;background:#1e3a8a;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;font-weight:500;font-family:inherit}
   button:hover{background:#1e40af}
   button.small{padding:5px 12px;font-size:12px}
@@ -32,15 +32,25 @@
   .answer{background:#ecfdf5;border-left:4px solid #10b981;padding:14px;border-radius:6px;white-space:pre-wrap;line-height:1.7;font-size:14px}
   .empty{color:#9ca3af;font-style:italic;padding:20px;text-align:center}
   
-  /* Dropdown Menu CSS */
-  .nav-menu { display: flex; flex-wrap: wrap; gap: 15px; background: #fff; padding: 0; margin: 0; border-bottom: 1px solid #ddd; }
-  .nav-item { position: relative; cursor: pointer; padding: 12px 15px; font-weight: bold; color: #333; }
-  .nav-item:hover { background: #f0f4f8; color: #1e3a8a; }
-  .dropdown { display: none; position: absolute; top: 100%; left: 0; background: #fff; min-width: 200px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border-radius: 0 0 6px 6px; z-index: 100; border: 1px solid #ddd; }
-  .nav-item:hover .dropdown { display: block; }
-  .dropdown-item { padding: 10px 15px; border-bottom: 1px solid #eee; color: #333; transition: 0.2s; }
-  .dropdown-item:hover { background: #e0f2fe; color: #0369a1; }
-  .dropdown-item:last-child { border-bottom: none; }
+  /* स्क्रिनसट जस्तै Multi-Level Dropdown CSS */
+  .nav-menu { display: flex; flex-wrap: wrap; background: #fff; padding: 0; margin: 0; border-bottom: 1px solid #ddd; }
+  .nav-item { position: relative; cursor: pointer; padding: 14px 20px; font-weight: bold; color: #333; font-size: 15px; }
+  .nav-item:hover { background: #1e3a8a; color: #fff; }
+  
+  /* ड्रपडाउन बक्स */
+  .dropdown { display: none; position: absolute; top: 100%; left: 0; background: #fff; min-width: 240px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border-radius: 0 0 6px 6px; z-index: 100; border: 1px solid #ddd; padding: 5px 0; }
+  .nav-item:hover > .dropdown { display: block; }
+  
+  /* ड्रपडाउन भित्रको आइटम */
+  .dropdown-item { position: relative; padding: 10px 15px; color: #333; font-size: 14px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+  .dropdown-item:hover { background: #f0f4f8; color: #1e3a8a; }
+  
+  /* दायाँपट्टि खुल्ने सब-मेनु (तीर सहित) */
+  .sub-dropdown { display: none; position: absolute; top: 0; left: 100%; background: #fff; min-width: 220px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border-radius: 0 6px 6px 6px; border: 1px solid #ddd; padding: 5px 0; }
+  .dropdown-item:hover > .sub-dropdown { display: block; }
+  
+  /* तीरको चिन्ह (Arrow) */
+  .arrow { font-size: 10px; color: #888; margin-left: 10px; }
   
   @media(max-width:700px){.grid2{grid-template-columns:1fr}header input{width:150px}}
 </style>
@@ -54,7 +64,8 @@
 
 <div class="container">
 
-  <div class="card" style="padding:0; overflow:hidden;">
+  <!-- हेडर मेनु (स्क्रिनसट जस्तै) -->
+  <div class="card" style="padding:0; overflow:visible;">
     <div id="navMenu" class="nav-menu">
       <div class="empty">लोड हुँदैछ...</div>
     </div>
@@ -109,6 +120,54 @@
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+// सबै PDF हरूलाई रुख (Tree) झैं मिलाउने फंक्शन
+function buildTree(paths) {
+  const tree = {};
+  paths.forEach(path => {
+    const parts = path.split('/');
+    let current = tree;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const part = parts[i];
+      if (!current[part]) current[part] = {};
+      current = current[part];
+    }
+    const file = parts[parts.length - 1];
+    current[file] = { _isFile: true, _path: path };
+  });
+  return tree;
+}
+
+// रुख (Tree) लाई HTML ड्रपडाउनमा बदल्ने
+function renderTree(tree, level = 0) {
+  let html = '';
+  const keys = Object.keys(tree).filter(k => k !== '_isFile' && k !== '_path').sort();
+  
+  keys.forEach(key => {
+    const node = tree[key];
+    const hasChildren = Object.keys(node).filter(k => k !== '_isFile').length > 0;
+    const isFile = node._isFile;
+
+    if (level === 0) {
+      // मुख्य हेडर (Top Level)
+      html += `<div class="nav-item">${esc(key.replace('.pdf', ''))}`;
+      if (hasChildren) {
+        html += `<div class="dropdown">${renderTree(node, level + 1)}</div>`;
+      }
+      html += `</div>`;
+    } else {
+      // सब-मेनु भित्रको आइटम
+      if (hasChildren) {
+        html += `<div class="dropdown-item">${esc(key)} <span class="arrow">▶</span>`;
+        html += `<div class="sub-dropdown">${renderTree(node, level + 1)}</div>`;
+        html += `</div>`;
+      } else if (isFile) {
+        html += `<div class="dropdown-item" onclick="openPdf('${esc(node._path)}')">📄 ${esc(key.replace('.pdf', ''))}</div>`;
+      }
+    }
+  });
+  return html;
+}
+
 async function loadPdfs() {
   const r = await fetch('/list_pdfs');
   const files = await r.json();
@@ -119,24 +178,23 @@ async function loadPdfs() {
   filter.innerHTML = '<option value="">— PDF छान्नुहोस् —</option>';
   
   if (!files.length) {
-    $('#navMenu').innerHTML = '<div class="empty">GitHub को pdfs फोल्डरमा कुनै PDF भेटिएन।</div>';
+    $('#navMenu').innerHTML = '<div class="empty" style="padding:10px;">GitHub को pdfs फोल्डरमा कुनै PDF भेटिएन।</div>';
     return;
   }
   
+  // ड्रपडाउन बक्सहरू भर्ने
   files.forEach(f => {
     spec.innerHTML += `<option value="${esc(f)}">${esc(f)}</option>`;
     filter.innerHTML += `<option value="${esc(f)}">${esc(f)}</option>`;
   });
 
-  let navHtml = '';
-  files.forEach(f => {
-    navHtml += `<div class="nav-item" onclick="openPdf('${esc(f)}')">${esc(f)}</div>`;
-  });
-  $('#navMenu').innerHTML = navHtml;
+  // हेडर मेनु बनाउने (Tree Logic प्रयोग गरेर)
+  const tree = buildTree(files);
+  $('#navMenu').innerHTML = renderTree(tree);
 }
 
-window.openPdf = function(filename) {
-  window.open('/pdf/' + encodeURIComponent(filename), '_blank');
+window.openPdf = function(filepath) {
+  window.open('/pdf/' + encodeURIComponent(filepath), '_blank');
 }
 
 $('#viewBtn').onclick = () => {

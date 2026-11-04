@@ -6,7 +6,6 @@ import fitz
 
 app = Flask(__name__)
 
-# तपाईंको GitHub रिपोजिटरी
 GITHUB_REPO = "barshapbp2026/any-pdf-"
 GITHUB_BRANCH = "main"
 
@@ -48,7 +47,7 @@ def search_in_pdf_bytes(pdf_bytes, query, max_results=30):
     return results
 
 def get_github_pdfs():
-    """GitHub को pdfs फोल्डर र सब-फोल्डरहरूबाट PDF खोज्ने"""
+    """GitHub बाट सबै PDF को फुल पाथ (Path) ल्याउने"""
     url = f"https://api.github.com/repos/{GITHUB_REPO}/git/trees/{GITHUB_BRANCH}?recursive=1"
     try:
         res = requests.get(url)
@@ -57,27 +56,28 @@ def get_github_pdfs():
             pdfs = []
             for item in tree:
                 if item["type"] == "blob" and item["path"].startswith("pdfs/") and item["path"].lower().endswith(".pdf"):
-                    clean_name = item["path"].replace("pdfs/", "", 1)
-                    pdfs.append(clean_name)
+                    # 'pdfs/' हटाएर बाँकी रहेको बाटो (जस्तै: ऐन/मालपोत.pdf)
+                    clean_path = item["path"].replace("pdfs/", "", 1)
+                    # यदि भित्र फेरि 'pdfs/' छ भने त्यो पनि हटाउने
+                    if clean_path.startswith("pdfs/"):
+                        clean_path = clean_path.replace("pdfs/", "", 1)
+                    pdfs.append(clean_path)
             return sorted(pdfs)
     except Exception as e:
         print("GitHub API error:", e)
     return []
 
-def get_pdf_bytes_from_github(filename):
-    """GitHub बाट सिधै PDF फाइल डाउनलोड गर्ने"""
-    safe_path = requests.utils.quote(f"pdfs/{filename}")
+def get_pdf_bytes_from_github(filepath):
+    safe_path = requests.utils.quote(f"pdfs/{filepath}")
     url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{safe_path}"
     try:
         res = requests.get(url)
-        if res.status_code == 200:
-            return res.content
-    except:
-        pass
+        if res.status_code == 200: return res.content
+    except: pass
     return None
 
-def collect_results(query, filename=None):
-    files = [filename] if filename else get_github_pdfs()
+def collect_results(query, filepath=None):
+    files = [filepath] if filepath else get_github_pdfs()
     out = []
     for f in files:
         try:
@@ -98,11 +98,10 @@ def index():
 def list_pdfs():
     return jsonify(get_github_pdfs())
 
-@app.route("/pdf/<path:filename>")
-def serve_pdf(filename):
-    pdf_data = get_pdf_bytes_from_github(filename)
-    if pdf_data:
-        return pdf_data, 200, {'Content-Type': 'application/pdf'}
+@app.route("/pdf/<path:filepath>")
+def serve_pdf(filepath):
+    pdf_data = get_pdf_bytes_from_github(filepath)
+    if pdf_data: return pdf_data, 200, {'Content-Type': 'application/pdf'}
     return "File not found", 404
 
 @app.route("/search", methods=["POST"])
@@ -110,9 +109,9 @@ def search():
     data = request.get_json() or {}
     query = (data.get("query") or "").strip()
     mode = data.get("mode", "all")
-    filename = data.get("filename") if mode == "specific" else None
+    filepath = data.get("filename") if mode == "specific" else None
     if not query: return jsonify({"error": "खोज शब्द खाली छ।"}), 400
-    results = collect_results(query, filename=filename)
+    results = collect_results(query, filepath=filepath)
     return jsonify({"results": results, "query": query})
 
 @app.route("/chat", methods=["POST"])
@@ -120,10 +119,10 @@ def chat():
     data = request.get_json() or {}
     query = (data.get("query") or "").strip()
     api_key = (data.get("api_key") or "").strip()
-    filename = (data.get("filename") or "").strip() or None
+    filepath = (data.get("filename") or "").strip() or None
     if not query: return jsonify({"error": "प्रश्न खाली छ।"}), 400
     
-    results = collect_results(query, filename=filename)
+    results = collect_results(query, filepath=filepath)
     
     if api_key:
         ctx_lines = []
