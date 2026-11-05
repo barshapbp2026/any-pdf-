@@ -47,7 +47,7 @@ def search_in_pdf_bytes(pdf_bytes, query, max_results=30):
     return results
 
 def get_github_pdfs():
-    """GitHub बाट सबै PDF को फुल पाथ (Path) ल्याउने"""
+    """GitHub बाट सबै फाइलहरूको पाथ (Path) ल्याउने"""
     url = f"https://api.github.com/repos/{GITHUB_REPO}/git/trees/{GITHUB_BRANCH}?recursive=1"
     try:
         res = requests.get(url)
@@ -58,9 +58,6 @@ def get_github_pdfs():
                 if item["type"] == "blob" and item["path"].startswith("pdfs/") and item["path"].lower().endswith(".pdf"):
                     # 'pdfs/' हटाएर बाँकी रहेको बाटो (जस्तै: ऐन/मालपोत.pdf)
                     clean_path = item["path"].replace("pdfs/", "", 1)
-                    # यदि भित्र फेरि 'pdfs/' छ भने त्यो पनि हटाउने
-                    if clean_path.startswith("pdfs/"):
-                        clean_path = clean_path.replace("pdfs/", "", 1)
                     pdfs.append(clean_path)
             return sorted(pdfs)
     except Exception as e:
