@@ -47,7 +47,6 @@ def search_in_pdf_bytes(pdf_bytes, query, max_results=30):
     return results
 
 def get_github_pdfs():
-    """GitHub बाट सबै फाइलहरूको पाथ (Path) ल्याउने"""
     url = f"https://api.github.com/repos/{GITHUB_REPO}/git/trees/{GITHUB_BRANCH}?recursive=1"
     try:
         res = requests.get(url)
@@ -56,7 +55,6 @@ def get_github_pdfs():
             pdfs = []
             for item in tree:
                 if item["type"] == "blob" and item["path"].startswith("pdfs/") and item["path"].lower().endswith(".pdf"):
-                    # 'pdfs/' हटाएर बाँकी रहेको बाटो (जस्तै: ऐन/मालपोत.pdf)
                     clean_path = item["path"].replace("pdfs/", "", 1)
                     pdfs.append(clean_path)
             return sorted(pdfs)
@@ -65,7 +63,8 @@ def get_github_pdfs():
     return []
 
 def get_pdf_bytes_from_github(filepath):
-    safe_path = requests.utils.quote(f"pdfs/{filepath}")
+    # URL Encode गर्दा slash (/) लाई पनि encode हुनबाट रोक्ने
+    safe_path = "/".join(requests.utils.quote(part) for part in f"pdfs/{filepath}".split("/"))
     url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{safe_path}"
     try:
         res = requests.get(url)
@@ -73,16 +72,27 @@ def get_pdf_bytes_from_github(filepath):
     except: pass
     return None
 
-def collect_results(query, filepath=None):
-    files = [filepath] if filepath else get_github_pdfs()
+def collect_results(queries, filepaths=None, folders=None):
+    all_files = get_github_pdfs()
+    
+    if filepaths:
+        files_to_search = filepaths
+    elif folders:
+        # यदि धेरै फोल्डर छानिएको छ भने, ती सबै फोल्डर भित्रका फाइल खोज्ने
+        files_to_search = [f for f in all_files if any(f.startswith(folder + "/") for folder in folders)]
+    else:
+        files_to_search = all_files
+
     out = []
-    for f in files:
+    for f in files_to_search:
         try:
             pdf_data = get_pdf_bytes_from_github(f)
             if pdf_data:
-                matches = search_in_pdf_bytes(pdf_data, query)
-                if matches:
-                    out.append({"filename": f, "matches": matches})
+                for q in queries:
+                    matches = search_in_pdf_bytes(pdf_data, q)
+                    if matches:
+                        if not any(x['filename'] == f and x['matches'] == matches for x in out):
+                            out.append({"filename": f, "matches": matches, "query": q})
         except Exception as e:
             print(f"Error reading {f}: {e}")
     return out
@@ -104,22 +114,31 @@ def serve_pdf(filepath):
 @app.route("/search", methods=["POST"])
 def search():
     data = request.get_json() or {}
-    query = (data.get("query") or "").strip()
+    queries = data.get("queries", [])
     mode = data.get("mode", "all")
-    filepath = data.get("filename") if mode == "specific" else None
-    if not query: return jsonify({"error": "खोज शब्द खाली छ।"}), 400
-    results = collect_results(query, filepath=filepath)
-    return jsonify({"results": results, "query": query})
+    target = data.get("target", "")
+    targets = data.get("targets", [])
+    
+    if not queries or not any(q.strip() for q in queries):
+        return jsonify({"error": "खोज शब्द खाली छ।"}), 400
+        
+    filepath = target if mode == "specific" else None
+    folders = targets if mode == "folder" else None
+    
+    results = collect_results(queries, filepaths=filepath, folders=folders)
+    return jsonify({"results": results})
 
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.get_json() or {}
-    query = (data.get("query") or "").strip()
+    queries = data.get("queries", [])
     api_key = (data.get("api_key") or "").strip()
-    filepath = (data.get("filename") or "").strip() or None
-    if not query: return jsonify({"error": "प्रश्न खाली छ।"}), 400
     
-    results = collect_results(query, filepath=filepath)
+    if not queries or not any(q.strip() for q in queries):
+        return jsonify({"error": "प्रश्न खाली छ।"}), 400
+        
+    query_str = " AND ".join(queries)
+    results = collect_results(queries)
     
     if api_key:
         ctx_lines = []
@@ -128,7 +147,7 @@ def chat():
                 sec = m["section"] or "सन्दर्भ अज्ञात"
                 ctx_lines.append(f"[PDF: {g['filename']} | पृष्ठ {m['page']} | {sec}] {m['snippet']}")
         context = "\n".join(ctx_lines) if ctx_lines else "कुनै मिल्दो सामग्री भेटिएन।"
-        prompt = f"तपाईं नेपाली कानुनी सहायक हुनुहुन्छ। तल दिइएको PDF सामग्रीको आधारमा प्रश्नको जवाफ दिनुहोस्।\n\nPDF सामग्री:\n{context}\n\nप्रश्न: {query}\n"
+        prompt = f"तपाईं नेपाली कानुनी सहायक हुनुहुन्छ। तल दिइएको PDF सामग्रीको आधारमा प्रश्नको जवाफ दिनुहोस्।\n\nPDF सामग्री:\n{context}\n\nप्रश्न: {query_str}\n"
         
         models_to_try = ["gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-1.5-pro", "gemini-2.0-flash"]
         last_error = ""

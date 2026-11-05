@@ -32,20 +32,21 @@
   .answer{background:#ecfdf5;border-left:4px solid #10b981;padding:14px;border-radius:6px;white-space:pre-wrap;line-height:1.7;font-size:14px}
   .empty{color:#9ca3af;font-style:italic;padding:20px;text-align:center}
   
-  /* 🎨 Dropdown CSS */
+  /* Dropdown CSS */
   .nav-menu { display: flex; flex-wrap: wrap; background: #fff; padding: 0; margin: 0; border-bottom: 1px solid #ddd; }
   .nav-item { position: relative; cursor: pointer; padding: 12px 18px; font-weight: 500; color: #333; font-size: 15px; transition: 0.2s; border-right: 1px solid #f0f0f0; }
   .nav-item:hover { background: #145db5; color: #fff; }
   
   .dropdown { display: none; position: absolute; top: 100%; left: 0; background: #fff; min-width: max-content; box-shadow: 0 4px 15px rgba(0,0,0,0.15); border-radius: 0 0 4px 4px; z-index: 100; border: 1px solid #ccc; border-top: none; padding: 0; }
-  .nav-item:hover > .dropdown { display: block; }
+  /* Hover र Click दुवैले खुल्ने */
+  .nav-item:hover > .dropdown, .nav-item.active > .dropdown { display: block; }
   
   .dropdown-item { position: relative; padding: 9px 20px 9px 15px; color: #333; font-size: 13px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; white-space: nowrap; border-bottom: 1px solid #eee; transition: 0.1s; }
   .dropdown-item:last-child { border-bottom: none; }
   .dropdown-item:hover { background: #145db5; color: #fff; }
   
   .sub-dropdown { display: none; position: absolute; top: 0; left: 100%; background: #fff; min-width: max-content; box-shadow: 0 4px 15px rgba(0,0,0,0.15); border-radius: 0 4px 4px 4px; border: 1px solid #ccc; padding: 0; margin-left: -1px; }
-  .dropdown-item:hover > .sub-dropdown { display: block; }
+  .dropdown-item:hover > .sub-dropdown, .dropdown-item.active > .sub-dropdown { display: block; }
   
   .arrow { font-size: 10px; margin-left: 20px; color: #666; }
   .dropdown-item:hover .arrow { color: #fff; }
@@ -56,6 +57,11 @@
   .search-input-row { display: flex; gap: 8px; margin-bottom: 8px; align-items: flex-start; }
   .search-input-row input { flex: 1; margin-bottom: 0; }
   .remove-btn { background: #ef4444; color: white; border: none; border-radius: 6px; height: 38px; padding: 0 12px; cursor: pointer; font-size: 14px; flex-shrink: 0;}
+
+  /* मल्टि-सेलेक्ट चेकबक्स बक्स */
+  .multi-select-box { max-height: 150px; overflow-y: auto; border: 1px solid #d1d5db; border-radius: 6px; padding: 8px; background: #fff; margin-bottom: 8px; }
+  .multi-select-box label { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 4px 0; cursor: pointer; }
+  .multi-select-box input[type="checkbox"] { width: auto; margin: 0; }
 
   @media(max-width:700px){.grid2{grid-template-columns:1fr}header input{width:150px}}
 </style>
@@ -68,24 +74,23 @@
 </header>
 
 <div class="container">
-  <!-- मुख्य हेडरहरू -->
   <div class="card" style="padding:0; overflow:visible; border:1px solid #ddd;">
     <div id="navMenu" class="nav-menu">
       <div class="empty">लोड हुँदैछ...</div>
     </div>
   </div>
 
-  <!-- PDF हेर्ने भाग (Hover Menu) -->
+  <!-- PDF हेर्ने भाग (Click गर्दा खुल्ने) -->
   <div class="card" style="padding:0; overflow:visible; border:1px solid #ddd;">
     <div class="nav-menu" style="background:#f8fafc;">
-      <div class="nav-item" style="color:#1e3a8a; font-weight:bold; background:#e2e8f0;">
-        📄 PDF हेर्नुहोस् (यहाँ माउस लगाउनुहोस्)
+      <div class="nav-item" style="color:#1e3a8a; font-weight:bold; background:#e2e8f0;" onclick="toggleMenu(this)">
+        📄 PDF हेर्नुहोस् (यहाँ क्लिक गर्नुहोस्)
         <div class="dropdown" id="viewPdfMenu" style="top:100%;"></div>
       </div>
     </div>
   </div>
 
-  <!-- 🔍 खोज्ने भाग (दुईवटा भिन्न सर्च बक्स) -->
+  <!-- खोज्ने भाग -->
   <div class="card">
     <h2>🔍 खोज्नुहोस् (Search)</h2>
     <div class="grid2">
@@ -104,12 +109,14 @@
         <button onclick="doSearch('specific')" style="width:100%; margin-top:10px;">PDF मा खोज्नुहोस्</button>
       </div>
 
-      <!-- दायाँ: फोल्डर/हेडर भित्र खोज्ने -->
+      <!-- दायाँ: एक वा दुईवटा फोल्डर भित्र खोज्ने (चेकबक्स) -->
       <div class="search-box">
-        <h3>📁 फोल्डर / शीर्षक भित्र खोज</h3>
-        <select id="folderSelect">
-          <option value="">सबै PDF हरूमा खोज्नुहोस्</option>
-        </select>
+        <h3>📁 फोल्डर / शीर्षक भित्र खोज (एक वा दुईवटा छान्नुहोस्)</h3>
+        
+        <div class="multi-select-box" id="folderCheckboxes">
+          <!-- चेकबक्सहरू यहाँ लोड हुनेछन् -->
+          <div class="empty" style="padding:5px; font-size:12px;">लोड हुँदैछ...</div>
+        </div>
         
         <div id="folderSearchInputs">
           <div class="search-input-row">
@@ -117,13 +124,12 @@
             <button class="plus-btn" onclick="addSearchInput('folderSearchInputs', 'folder-query')" title="अर्को थप्नुहोस्">+</button>
           </div>
         </div>
-        <button onclick="doSearch('folder')" style="width:100%; margin-top:10px;">फोल्डरमा खोज्नुहोस्</button>
+        <button onclick="doSearch('folder')" style="width:100%; margin-top:10px;">छानिएका फोल्डरमा खोज्नुहोस्</button>
       </div>
 
     </div>
   </div>
 
-  <!-- च्याट भाग -->
   <div class="card">
     <h2>💬 PDF सँग प्रश्न सोध्नुहोस्</h2>
     <div class="row">
@@ -132,7 +138,6 @@
     </div>
   </div>
 
-  <!-- नतिजा -->
   <div class="card">
     <h2>📋 नतिजा</h2>
     <div id="answerWrap"></div>
@@ -143,6 +148,11 @@
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+// क्लिक गर्दा मेनु टोगल गर्ने
+function toggleMenu(el) {
+  el.classList.toggle('active');
+}
 
 function cleanName(name) {
   return name.replace(/\.pdf$/i, '');
@@ -176,16 +186,16 @@ function renderTree(tree, isViewMode = false, level = 0) {
     const displayName = cleanName(key);
 
     if (level === 0 && !isViewMode) {
-      html += `<div class="nav-item">${esc(displayName)}`;
+      html += `<div class="nav-item" onclick="toggleMenu(this)">${esc(displayName)}`;
       if (hasChildren) html += `<div class="dropdown">${renderTree(node, isViewMode, level + 1)}</div>`;
       html += `</div>`;
     } else {
       if (hasChildren) {
-        html += `<div class="dropdown-item">${esc(displayName)} <span class="arrow">▶</span>`;
+        html += `<div class="dropdown-item" onclick="event.stopPropagation(); toggleMenu(this);">${esc(displayName)} <span class="arrow">▶</span>`;
         html += `<div class="sub-dropdown">${renderTree(node, isViewMode, level + 1)}</div>`;
         html += `</div>`;
       } else if (isFile) {
-        html += `<div class="dropdown-item" onclick="openPdf('${esc(node._path)}')">📄 ${esc(displayName)}</div>`;
+        html += `<div class="dropdown-item" onclick="event.stopPropagation(); openPdf('${esc(node._path)}')">📄 ${esc(displayName)}</div>`;
       }
     }
   });
@@ -193,6 +203,7 @@ function renderTree(tree, isViewMode = false, level = 0) {
 }
 
 let allFiles = [];
+let allFolders = [];
 
 async function loadPdfs() {
   const r = await fetch('/list_pdfs');
@@ -208,7 +219,7 @@ async function loadPdfs() {
   $('#navMenu').innerHTML = renderTree(tree, false);
   $('#viewPdfMenu').innerHTML = renderTree(tree, true, 1);
 
-  // सर्च ड्रपडाउन भर्ने (PDF र फोल्डरको लागि)
+  // PDF को लिस्ट भर्ने
   let pdfOptions = '<option value="">— PDF छान्नुहोस् —</option>';
   let folderSet = new Set();
   
@@ -224,14 +235,16 @@ async function loadPdfs() {
   
   $('#specificPdfSelect').innerHTML = pdfOptions;
   
-  let folderOptions = '<option value="">सबै PDF हरूमा खोज्नुहोस्</option>';
-  Array.from(folderSet).sort((a, b) => a.localeCompare(b, 'ne', { numeric: true })).forEach(f => {
-    folderOptions += `<option value="${esc(f)}">📁 ${esc(f)}</option>`;
+  // चेकबक्सहरू भर्ने (मल्टिपल फोल्डर छान्नको लागि)
+  allFolders = Array.from(folderSet).sort((a, b) => a.localeCompare(b, 'ne', { numeric: true }));
+  let checkboxHtml = '';
+  allFolders.forEach(f => {
+    checkboxHtml += `<label><input type="checkbox" class="folder-checkbox" value="${esc(f)}"> 📁 ${esc(f)}</label>`;
   });
-  $('#folderSelect').innerHTML = folderOptions;
+  $('#folderCheckboxes').innerHTML = checkboxHtml || '<div class="empty" style="padding:5px; font-size:12px;">कुनै फोल्डर भेटिएन।</div>';
 }
 
-// प्लस (+) बटन लजिक
+// अन्य इनपुट थप्ने
 function addSearchInput(containerId, inputClass) {
   const container = $('#' + containerId);
   if (container.children.length >= 6) return alert('अधिकतम ६ वटा मात्र थप्न सकिन्छ।');
@@ -250,6 +263,7 @@ async function doSearch(type) {
   let queries = [];
   let mode = "";
   let target = "";
+  let targets = [];
   
   if (type === 'specific') {
     queries = Array.from(document.querySelectorAll('.pdf-query')).map(i => i.value.trim()).filter(v => v);
@@ -258,11 +272,13 @@ async function doSearch(type) {
     if (!target) return alert('कृपया एउटा PDF छान्नुहोस्');
   } else {
     queries = Array.from(document.querySelectorAll('.folder-query')).map(i => i.value.trim()).filter(v => v);
-    target = $('#folderSelect').value;
-    if (target === "") {
-      mode = 'all'; // सबैमा खोज्ने
+    
+    // चेकबक्सहरूबाट छानिएका फोल्डरहरू लिने
+    targets = Array.from(document.querySelectorAll('.folder-checkbox:checked')).map(cb => cb.value);
+    if (targets.length === 0) {
+      mode = 'all'; // यदि कुनै फोल्डर छानिएको छैन भने सबैमा खोज्ने
     } else {
-      mode = 'folder'; // फोल्डर भित्र खोज्ने
+      mode = 'folder'; // छानिएका फोल्डर भित्र खोज्ने
     }
   }
   
@@ -271,7 +287,7 @@ async function doSearch(type) {
   $('#resultsWrap').innerHTML = '<div class="empty">खोजिँदै...</div>';
   const r = await fetch('/search', {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ queries, mode, target })
+    body: JSON.stringify({ queries, mode, target, targets })
   });
   const d = await r.json();
   if (d.error) return alert(d.error);
@@ -304,7 +320,9 @@ function renderResults(results, query) {
 }
 
 window.openPdf = function(filepath) {
-  window.open('/pdf/' + encodeURIComponent(filepath), '_blank');
+  // URL मा स्ल्यास (/) सुरक्षित राख्नको लागि encodeURIComponent को सट्टा split गरेर encode गर्ने
+  const safeUrl = filepath.split('/').map(encodeURIComponent).join('/');
+  window.open('/pdf/' + safeUrl, '_blank');
 }
 
 $('#chatBtn').onclick = async () => {
