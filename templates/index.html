@@ -73,6 +73,7 @@
 </header>
 
 <div class="container">
+  <!-- Main Nav Menu -->
   <div class="card" style="padding:0; overflow:visible; border:1px solid #ddd;">
     <div id="navMenu" class="nav-menu">
       <div class="empty">लोड हुँदैछ...</div>
@@ -94,27 +95,28 @@
     <h2>🔍 खोज्नुहोस् (Search)</h2>
     <div class="grid2">
       
-      <!-- बायाँ: निश्चित PDF भित्र खोज्ने (सामान्य ड्रपडाउन) -->
+      <!-- बायाँ: निश्चित PDF भित्र खोज्ने -->
       <div class="search-box">
         <h3>📄 निश्चित PDF भित्र खोज</h3>
         
-        <!-- पहिले फोल्डर छान्ने -->
         <select id="searchFolderSelect" onchange="updatePdfSelect()">
           <option value="">— पहिले फोल्डर छान्नुहोस् —</option>
         </select>
         
-        <!-- त्यसपछि PDF छान्ने -->
-        <select id="searchPdfSelect">
+        <select id="searchPdfSelect" onchange="toggleViewBtn()">
           <option value="">— PDF छान्नुहोस् —</option>
         </select>
+
+        <!-- PDF हेर्ने बटन (सर्च नगरी पनि हेर्न सकिने) -->
+        <button id="viewSelectedPdfBtn" style="width:100%; background:#059669; margin-bottom:10px; display:none;" onclick="viewSelectedPdf()">📖 यो PDF पढ्नुहोस्</button>
         
         <div id="pdfSearchInputs">
           <div class="search-input-row">
-            <input type="text" class="pdf-query" placeholder="जस्तै: दफा 10...">
+            <input type="text" class="pdf-query" placeholder="खोज्नको लागि शब्द लेख्नुहोस् (जस्तै: दफा 10)...">
             <button class="plus-btn" onclick="addSearchInput('pdfSearchInputs', 'pdf-query')" title="अर्को थप्नुहोस्">+</button>
           </div>
         </div>
-        <button onclick="doSearch('specific')" style="width:100%; margin-top:10px;">PDF मा खोज्नुहोस्</button>
+        <button onclick="doSearch('specific')" style="width:100%; margin-top:10px;">PDF भित्र खोज्नुहोस्</button>
       </div>
 
       <!-- दायाँ: फोल्डर भित्र खोज्ने -->
@@ -123,7 +125,7 @@
         <div class="multi-select-box" id="folderCheckboxes"></div>
         <div id="folderSearchInputs">
           <div class="search-input-row">
-            <input type="text" class="folder-query" placeholder="जस्तै: दफा 10...">
+            <input type="text" class="folder-query" placeholder="खोज्नको लागि शब्द लेख्नुहोस्...">
             <button class="plus-btn" onclick="addSearchInput('folderSearchInputs', 'folder-query')" title="अर्को थप्नुहोस्">+</button>
           </div>
         </div>
@@ -152,7 +154,6 @@
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-// यहाँ तपाईंको GitHub Details राख्नुहोस्
 const GITHUB_REPO = "barshapbp2026/any-pdf-";
 const GITHUB_BRANCH = "main";
 
@@ -160,10 +161,11 @@ function cleanName(name) {
   return name.replace(/\.pdf$/i, '');
 }
 
-// सिधै GitHub बाट PDF खोल्ने लिंक बनाउने (Netrun सर्भर प्रयोग नगर्ने)
+// PDF लाई Google Docs Viewer मार्फत खोल्ने (मोबाइलमा पनि सजिलै खुल्छ)
 function getDirectPdfUrl(filepath) {
   const encodedPath = filepath.split('/').map(encodeURIComponent).join('/');
-  return `https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}/pdfs/${encodedPath}`;
+  const rawUrl = `https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}/pdfs/${encodedPath}`;
+  return `https://docs.google.com/viewer?url=${encodeURIComponent(rawUrl)}&embedded=true`;
 }
 
 function buildTree(paths) {
@@ -204,7 +206,6 @@ function renderTree(tree, isMainNav = false, level = 0) {
         html += `<div class="sub-dropdown">${renderTree(node, false, level + 1)}</div>`;
         html += `</div>`;
       } else if (isFile) {
-        // सिधै raw.githubusercontent.com को लिंक प्रयोग गरियो
         html += `<a href="${getDirectPdfUrl(node._path)}" target="_blank" class="dropdown-item">📄 ${esc(displayName)}</a>`;
       }
     }
@@ -228,7 +229,6 @@ async function loadPdfs() {
   $('#navMenu').innerHTML = renderTree(tree, true, 0);
   $('#viewPdfMenu').innerHTML = renderTree(tree, false, 0);
 
-  // फोल्डरको चेकबक्सहरू भर्ने
   let folderSet = new Set();
   allFiles.forEach(f => {
     let parts = f.split('/');
@@ -240,14 +240,12 @@ async function loadPdfs() {
   
   allFolders = Array.from(folderSet).sort((a, b) => a.localeCompare(b, 'ne', { numeric: true }));
   
-  // बायाँतिरको सर्च फोल्डर ड्रपडाउन भर्ने
   let folderSelectHtml = '<option value="">— पहिले फोल्डर छान्नुहोस् —</option>';
   allFolders.forEach(f => {
     folderSelectHtml += `<option value="${esc(f)}">📁 ${esc(f)}</option>`;
   });
   $('#searchFolderSelect').innerHTML = folderSelectHtml;
 
-  // दायाँतिरको सबै छान्ने चेकबक्स
   let checkboxHtml = `
     <label class="select-all-row">
       <input type="checkbox" id="selectAllFolders" onchange="toggleAllFolders(this)"> 
@@ -260,24 +258,41 @@ async function loadPdfs() {
   $('#folderCheckboxes').innerHTML = checkboxHtml;
 }
 
-// फोल्डर छान्दा PDF को लिस्ट अपडेट गर्ने फंक्शन
 function updatePdfSelect() {
   const selectedFolder = $('#searchFolderSelect').value;
   const pdfSelect = $('#searchPdfSelect');
   
   if (!selectedFolder) {
     pdfSelect.innerHTML = '<option value="">— PDF छान्नुहोस् —</option>';
+    toggleViewBtn();
     return;
   }
   
-  // त्यो फोल्डर भित्रका फाइलहरू मात्र छान्ने
   const filesInFolder = allFiles.filter(f => f.startsWith(selectedFolder + '/'));
-  
   let html = '<option value="">— PDF छान्नुहोस् —</option>';
   filesInFolder.forEach(f => {
     html += `<option value="${esc(f)}">📄 ${esc(cleanName(f))}</option>`;
   });
   pdfSelect.innerHTML = html;
+  toggleViewBtn();
+}
+
+// PDF छानिएमा "PDF पढ्नुहोस्" बटन देखाउने
+function toggleViewBtn() {
+  const val = $('#searchPdfSelect').value;
+  if (val) {
+    $('#viewSelectedPdfBtn').style.display = 'block';
+  } else {
+    $('#viewSelectedPdfBtn').style.display = 'none';
+  }
+}
+
+// छानिएको PDF सिधै खोल्ने
+function viewSelectedPdf() {
+  const val = $('#searchPdfSelect').value;
+  if (val) {
+    window.open(getDirectPdfUrl(val), '_blank');
+  }
 }
 
 function toggleAllFolders(source) {
@@ -319,7 +334,7 @@ async function doSearch(type) {
     }
   }
   
-  if (!queries.length) return alert('कृपया खोज्नको लागि शब्द लेख्नुहोस्');
+  if (!queries.length) return alert('खोज्नको लागि कम्तिमा एउटा शब्द लेख्नुहोस् (जस्तै: दफा १०)');
   
   $('#resultsWrap').innerHTML = '<div class="empty">खोजिँदै...</div>';
   const r = await fetch('/search', {
@@ -342,8 +357,7 @@ function renderResults(results, query) {
     html += `<div class="pdf-group"><h4>📄 ${esc(g.filename)}</h4>`;
     g.matches.forEach(m => {
       const sec = m.section ? `<span class="badge">${esc(m.section)}</span>` : `<span class="badge">सन्दर्भ अज्ञात</span>`;
-      // नतिजामा पनि सिधै GitHub को लिंक राखियो
-      const url = `${getDirectPdfUrl(g.filename)}#page=${m.page}`;
+      const url = `${getDirectPdfUrl(g.filename)}#page=${m.page}`; // Google Viewer URL
       html += `
         <div class="result-item">
           <div class="meta">${sec} पृष्ठ <strong>${m.page}</strong>
