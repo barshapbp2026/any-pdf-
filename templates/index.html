@@ -38,7 +38,6 @@
   .nav-item:hover { background: #145db5; color: #fff; }
   
   .dropdown { display: none; position: absolute; top: 100%; left: 0; background: #fff; min-width: max-content; box-shadow: 0 4px 15px rgba(0,0,0,0.15); border-radius: 0 0 4px 4px; z-index: 100; border: 1px solid #ccc; border-top: none; padding: 0; }
-  /* Hover र Click दुवैले खुल्ने */
   .nav-item:hover > .dropdown, .nav-item.active > .dropdown { display: block; }
   
   .dropdown-item { position: relative; padding: 9px 20px 9px 15px; color: #333; font-size: 13px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; white-space: nowrap; border-bottom: 1px solid #eee; transition: 0.1s; }
@@ -59,9 +58,11 @@
   .remove-btn { background: #ef4444; color: white; border: none; border-radius: 6px; height: 38px; padding: 0 12px; cursor: pointer; font-size: 14px; flex-shrink: 0;}
 
   /* मल्टि-सेलेक्ट चेकबक्स बक्स */
-  .multi-select-box { max-height: 150px; overflow-y: auto; border: 1px solid #d1d5db; border-radius: 6px; padding: 8px; background: #fff; margin-bottom: 8px; }
-  .multi-select-box label { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 4px 0; cursor: pointer; }
-  .multi-select-box input[type="checkbox"] { width: auto; margin: 0; }
+  .multi-select-box { max-height: 180px; overflow-y: auto; border: 1px solid #d1d5db; border-radius: 6px; padding: 8px; background: #fff; margin-bottom: 8px; }
+  .multi-select-box label { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 6px 0; cursor: pointer; border-bottom: 1px solid #f3f4f6; }
+  .multi-select-box label:last-child { border-bottom: none; }
+  .multi-select-box input[type="checkbox"] { width: 16px; height: 16px; margin: 0; cursor: pointer; }
+  .select-all-row { font-weight: bold; background: #e0f2fe; border-radius: 4px; padding: 8px !important; margin-bottom: 5px; border: none !important; color: #0369a1;}
 
   @media(max-width:700px){.grid2{grid-template-columns:1fr}header input{width:150px}}
 </style>
@@ -80,7 +81,7 @@
     </div>
   </div>
 
-  <!-- PDF हेर्ने भाग (Click गर्दा खुल्ने) -->
+  <!-- PDF हेर्ने भाग -->
   <div class="card" style="padding:0; overflow:visible; border:1px solid #ddd;">
     <div class="nav-menu" style="background:#f8fafc;">
       <div class="nav-item" style="color:#1e3a8a; font-weight:bold; background:#e2e8f0;" onclick="toggleMenu(this)">
@@ -109,13 +110,12 @@
         <button onclick="doSearch('specific')" style="width:100%; margin-top:10px;">PDF मा खोज्नुहोस्</button>
       </div>
 
-      <!-- दायाँ: एक वा दुईवटा फोल्डर भित्र खोज्ने (चेकबक्स) -->
+      <!-- दायाँ: फोल्डर भित्र खोज्ने (Select All सहित) -->
       <div class="search-box">
-        <h3>📁 फोल्डर / शीर्षक भित्र खोज (एक वा दुईवटा छान्नुहोस्)</h3>
+        <h3>📁 फोल्डर / शीर्षक भित्र खोज</h3>
         
         <div class="multi-select-box" id="folderCheckboxes">
           <!-- चेकबक्सहरू यहाँ लोड हुनेछन् -->
-          <div class="empty" style="padding:5px; font-size:12px;">लोड हुँदैछ...</div>
         </div>
         
         <div id="folderSearchInputs">
@@ -228,20 +228,33 @@ async function loadPdfs() {
     
     let parts = f.split('/');
     if (parts.length > 1) {
-      folderSet.add(parts[0]); // मुख्य फोल्डर
-      if (parts.length > 2) folderSet.add(parts[0] + '/' + parts[1]); // सब-फोल्डर
+      folderSet.add(parts[0]); 
+      if (parts.length > 2) folderSet.add(parts[0] + '/' + parts[1]); 
     }
   });
   
   $('#specificPdfSelect').innerHTML = pdfOptions;
   
-  // चेकबक्सहरू भर्ने (मल्टिपल फोल्डर छान्नको लागि)
+  // चेकबक्सहरू भर्ने (सबै छान्ने अप्सन सहित)
   allFolders = Array.from(folderSet).sort((a, b) => a.localeCompare(b, 'ne', { numeric: true }));
-  let checkboxHtml = '';
+  
+  let checkboxHtml = `
+    <label class="select-all-row">
+      <input type="checkbox" id="selectAllFolders" onchange="toggleAllFolders(this)"> 
+      ☑️ सबै छान्नुहोस् (Select All)
+    </label>
+  `;
+  
   allFolders.forEach(f => {
     checkboxHtml += `<label><input type="checkbox" class="folder-checkbox" value="${esc(f)}"> 📁 ${esc(f)}</label>`;
   });
-  $('#folderCheckboxes').innerHTML = checkboxHtml || '<div class="empty" style="padding:5px; font-size:12px;">कुनै फोल्डर भेटिएन।</div>';
+  $('#folderCheckboxes').innerHTML = checkboxHtml;
+}
+
+// सबै चेकबक्स छान्ने/हटाउने फंक्शन
+function toggleAllFolders(source) {
+  const checkboxes = document.querySelectorAll('.folder-checkbox');
+  checkboxes.forEach(cb => cb.checked = source.checked);
 }
 
 // अन्य इनपुट थप्ने
@@ -320,7 +333,6 @@ function renderResults(results, query) {
 }
 
 window.openPdf = function(filepath) {
-  // URL मा स्ल्यास (/) सुरक्षित राख्नको लागि encodeURIComponent को सट्टा split गरेर encode गर्ने
   const safeUrl = filepath.split('/').map(encodeURIComponent).join('/');
   window.open('/pdf/' + safeUrl, '_blank');
 }
