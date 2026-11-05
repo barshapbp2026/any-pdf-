@@ -50,11 +50,19 @@
   .arrow { font-size: 10px; margin-left: 20px; color: #666; }
   .dropdown-item:hover .arrow { color: #fff; }
 
-  /* Custom Select Box for Search */
-  .custom-select { padding: 9px 12px; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; cursor: pointer; font-size: 14px; user-select: none; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
-  .custom-select:hover { background: #f9fafb; }
-  .select-menu { display: none; position: absolute; top: 100%; left: 14px; right: 14px; background: #fff; border: 1px solid #d1d5db; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 200; max-height: 250px; overflow-y: auto; padding: 5px 0; text-align: left;}
-  .select-menu.active { display: block; }
+  /* Custom Select Box using <details> */
+  .custom-select-box { border: 1px solid #d1d5db; border-radius: 6px; background: #fff; margin-bottom: 8px; position: relative; }
+  .custom-select-box summary { padding: 9px 12px; cursor: pointer; font-size: 14px; font-weight: 500; list-style: none; display: flex; justify-content: space-between; align-items: center; user-select: none; }
+  .custom-select-box summary::-webkit-details-marker { display: none; }
+  .custom-select-box[open] summary { border-bottom: 1px solid #eee; }
+  .custom-select-box .details-content { max-height: 250px; overflow-y: auto; padding: 5px 0; }
+  
+  /* Nested details inside the select box */
+  .details-content details { margin-left: 15px; border-left: 1px dashed #ddd; }
+  .details-content summary { padding: 6px 10px; font-size: 13px; font-weight: normal; color: #333; cursor: pointer; list-style: none; }
+  .details-content summary:hover { background: #f0f4f8; color: #145db5; }
+  .details-content .pdf-file { padding: 6px 10px 6px 30px; font-size: 13px; cursor: pointer; display: block; text-decoration: none; color: #333; }
+  .details-content .pdf-file:hover { background: #145db5; color: #fff; }
 
   /* Search inputs styles */
   .plus-btn { background: #10b981; color: white; border-radius: 6px; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; font-size: 20px; cursor: pointer; border: none; padding: 0; margin-bottom: 8px; flex-shrink: 0;}
@@ -80,7 +88,6 @@
 </header>
 
 <div class="container">
-  <!-- Main Nav Menu -->
   <div class="card" style="padding:0; overflow:visible; border:1px solid #ddd;">
     <div id="navMenu" class="nav-menu">
       <div class="empty">लोड हुँदैछ...</div>
@@ -102,18 +109,20 @@
     <h2>🔍 खोज्नुहोस् (Search)</h2>
     <div class="grid2">
       
-      <!-- बायाँ: निश्चित PDF भित्र खोज्ने (कस्टम ट्री मेनु सहित) -->
+      <!-- बायाँ: निश्चित PDF भित्र खोज्ने (नेस्टेड details प्रयोग गरिएको) -->
       <div class="search-box">
         <h3>📄 निश्चित PDF भित्र खोज</h3>
         
-        <!-- कस्टम ड्रपडाउन (क्लिक गर्दा खुल्ने) -->
-        <div class="custom-select" onclick="toggleSearchPdfMenu(event)">
-          <span id="selectedPdfDisplay">— PDF छान्नुहोस् —</span>
-          <span>▼</span>
-        </div>
-        <!-- भित्री ट्री मेनु यहाँ लोड हुनेछ -->
-        <div class="select-menu" id="searchPdfTreeMenu"></div>
-        <!-- छानिएको PDF को बाटो सेभ गर्न -->
+        <details class="custom-select-box" id="searchPdfDetails">
+          <summary>
+            <span id="selectedPdfDisplay">— PDF छान्नुहोस् —</span>
+            <span>▼</span>
+          </summary>
+          <div class="details-content" id="searchPdfTreeMenu">
+            <!-- ट्री मेनु यहाँ लोड हुनेछ -->
+          </div>
+        </details>
+        
         <input type="hidden" id="selectedPdfValue" value="">
         
         <div id="pdfSearchInputs">
@@ -160,25 +169,10 @@
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-// क्लिक गर्दा मेनु टोगल गर्ने
+// मुख्य मेनुको लागि टोगल
 function toggleMenu(el) {
   el.classList.toggle('active');
 }
-
-// सर्चको कस्टम ड्रपडाउन टोगल गर्ने
-function toggleSearchPdfMenu(e) {
-  e.stopPropagation();
-  $('#searchPdfTreeMenu').classList.toggle('active');
-}
-
-// बाहिर क्लिक गर्दा सर्च मेनु बन्द गर्ने
-document.addEventListener('click', function(e) {
-  const menu = $('#searchPdfTreeMenu');
-  const select = $('.custom-select');
-  if (menu && menu.classList.contains('active') && !select.contains(e.target) && !menu.contains(e.target)) {
-    menu.classList.remove('active');
-  }
-});
 
 function cleanName(name) {
   return name.replace(/\.pdf$/i, '');
@@ -204,7 +198,7 @@ function buildTree(paths) {
   return tree;
 }
 
-// मुख्य नेभिगेसन र PDF हेर्ने मेनु रेन्डर गर्ने
+// मुख्य र PDF हेर्ने मेनु रेन्डर
 function renderTree(tree, isMainNav = false, level = 0) {
   let html = '';
   let keys = Object.keys(tree).filter(k => k !== '_isFile' && k !== '_path');
@@ -226,7 +220,7 @@ function renderTree(tree, isMainNav = false, level = 0) {
         html += `<div class="sub-dropdown">${renderTree(node, false, level + 1)}</div>`;
         html += `</div>`;
       } else if (isFile) {
-        // PDF खोल्ने लिंक (पप-अप ब्लक हुँदैन)
+        // <a> ट्यागले सिधै PDF खोल्छ
         html += `<a href="/pdf/${safeUrl(node._path)}" target="_blank" class="dropdown-item">📄 ${esc(displayName)}</a>`;
       }
     }
@@ -234,7 +228,7 @@ function renderTree(tree, isMainNav = false, level = 0) {
   return html;
 }
 
-// सर्च गर्नको लागि PDF छान्ने ट्री मेनु रेन्डर गर्ने
+// सर्चको लागि details/summary भित्रको ट्री रेन्डर
 function renderSearchTree(tree, level = 0) {
   let html = '';
   let keys = Object.keys(tree).filter(k => k !== '_isFile' && k !== '_path');
@@ -247,23 +241,23 @@ function renderSearchTree(tree, level = 0) {
     const displayName = cleanName(key);
 
     if (hasChildren) {
-      html += `<div class="dropdown-item" onclick="event.stopPropagation(); toggleMenu(this);">${esc(displayName)} <span class="arrow">▶</span>`;
-      html += `<div class="sub-dropdown" style="top: -5px; left: 98%;">${renderSearchTree(node, level + 1)}</div>`;
-      html += `</div>`;
+      html += `<details><summary>📁 ${esc(displayName)}</summary>`;
+      html += renderSearchTree(node, level + 1);
+      html += `</details>`;
     } else if (isFile) {
-      // क्लिक गर्दा सर्चको लागि PDF सेलेक्ट हुने
-      html += `<div class="dropdown-item" onclick="selectSearchPdf(event, '${esc(node._path)}', '${esc(displayName)}')">📄 ${esc(displayName)}</div>`;
+      // क्लिक गर्दा पप-अप बन्द गरेर सर्चको लागि PDF सेलेक्ट गर्ने
+      html += `<a class="pdf-file" onclick="selectSearchPdf(event, '${esc(node._path)}', '${esc(displayName)}')">📄 ${esc(displayName)}</a>`;
     }
   });
   return html;
 }
 
-// सर्चको लागि PDF सेलेक्ट गर्ने फंक्शन
+// PDF सेलेक्ट गर्ने फंक्शन
 function selectSearchPdf(e, path, name) {
-  e.stopPropagation();
+  e.preventDefault();
   $('#selectedPdfValue').value = path;
   $('#selectedPdfDisplay').innerText = "📄 " + name;
-  $('#searchPdfTreeMenu').classList.remove('active');
+  $('#searchPdfDetails').removeAttribute('open'); // ड्रपडाउन बन्द गर्ने
 }
 
 let allFiles = [];
@@ -280,14 +274,13 @@ async function loadPdfs() {
   
   const tree = buildTree(allFiles);
   
-  // मुख्य मेनु र PDF हेर्ने मेनु
   $('#navMenu').innerHTML = renderTree(tree, true, 0);
   $('#viewPdfMenu').innerHTML = renderTree(tree, false, 0);
-
-  // सर्च गर्नको लागि कस्टम ट्री मेनु
+  
+  // details स्ट्रक्चर भित्र ट्री रेन्डर गर्ने
   $('#searchPdfTreeMenu').innerHTML = renderSearchTree(tree);
 
-  // फोल्डर चेकबक्स
+  // चेकबक्स
   let folderSet = new Set();
   allFiles.forEach(f => {
     let parts = f.split('/');
@@ -344,9 +337,9 @@ async function doSearch(type) {
     queries = Array.from(document.querySelectorAll('.folder-query')).map(i => i.value.trim()).filter(v => v);
     targets = Array.from(document.querySelectorAll('.folder-checkbox:checked')).map(cb => cb.value);
     if (targets.length === 0) {
-      mode = 'all'; // यदि कुनै फोल्डर छानिएको छैन भने सबैमा खोज्ने
+      mode = 'all';
     } else {
-      mode = 'folder'; // छानिएका फोल्डर भित्र खोज्ने
+      mode = 'folder';
     }
   }
   

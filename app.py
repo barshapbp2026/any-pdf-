@@ -63,13 +63,17 @@ def get_github_pdfs():
     return []
 
 def get_pdf_bytes_from_github(filepath):
-    # URL Encode गर्दा slash (/) लाई पनि encode हुनबाट रोक्ने
+    # URL Encode गर्दा slash (/) लाई बचाउने
     safe_path = "/".join(requests.utils.quote(part) for part in f"pdfs/{filepath}".split("/"))
     url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{safe_path}"
     try:
         res = requests.get(url)
-        if res.status_code == 200: return res.content
-    except: pass
+        if res.status_code == 200: 
+            return res.content
+        else:
+            print(f"GitHub fetch failed ({res.status_code}): {url}")
+    except Exception as e:
+        print(f"Fetch error: {e}")
     return None
 
 def collect_results(queries, filepaths=None, folders=None):
@@ -78,8 +82,7 @@ def collect_results(queries, filepaths=None, folders=None):
     if filepaths:
         files_to_search = filepaths
     elif folders:
-        # यदि धेरै फोल्डर छानिएको छ भने, ती सबै फोल्डर भित्रका फाइल खोज्ने
-        files_to_search = [f for f in all_files if any(f.startswith(folder + "/") for folder in folders)]
+        files_to_search = [f for f in all_files if any(f.startswith(folder + "/") or f == folder for folder in folders)]
     else:
         files_to_search = all_files
 
@@ -108,8 +111,9 @@ def list_pdfs():
 @app.route("/pdf/<path:filepath>")
 def serve_pdf(filepath):
     pdf_data = get_pdf_bytes_from_github(filepath)
-    if pdf_data: return pdf_data, 200, {'Content-Type': 'application/pdf'}
-    return "File not found", 404
+    if pdf_data: 
+        return pdf_data, 200, {'Content-Type': 'application/pdf'}
+    return "PDF File not found on GitHub", 404
 
 @app.route("/search", methods=["POST"])
 def search():
