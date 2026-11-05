@@ -31,7 +31,7 @@
   .answer{background:#ecfdf5;border-left:4px solid #10b981;padding:14px;border-radius:6px;white-space:pre-wrap;line-height:1.7;font-size:14px}
   .empty{color:#9ca3af;font-style:italic;padding:20px;text-align:center}
   
-  /* Dropdown CSS (होभर गर्दा खुल्ने) */
+  /* Dropdown CSS (Hover गर्दा खुल्ने) */
   .nav-menu { display: flex; flex-wrap: wrap; background: #fff; padding: 0; margin: 0; border-bottom: 1px solid #ddd; }
   .nav-item { position: relative; cursor: pointer; padding: 12px 18px; font-weight: 500; color: #333; font-size: 15px; transition: 0.2s; border-right: 1px solid #f0f0f0; }
   .nav-item:hover { background: #145db5; color: #fff; }
@@ -73,7 +73,6 @@
 </header>
 
 <div class="container">
-  <!-- मुख्य हेडर मेनु (Hover गर्दा सिधै PDF सम्म पुर्याउने) -->
   <div class="card" style="padding:0; overflow:visible; border:1px solid #ddd;">
     <div id="navMenu" class="nav-menu">
       <div class="empty">लोड हुँदैछ...</div>
@@ -88,12 +87,18 @@
       <!-- बायाँ: निश्चित PDF भित्र खोज्ने -->
       <div class="search-box">
         <h3>📄 निश्चित PDF भित्र खोज</h3>
+        
         <select id="searchFolderSelect" onchange="updatePdfSelect()">
           <option value="">— पहिले फोल्डर छान्नुहोस् —</option>
         </select>
-        <select id="searchPdfSelect">
+        
+        <select id="searchPdfSelect" onchange="toggleViewBtn()">
           <option value="">— PDF छान्नुहोस् —</option>
         </select>
+
+        <!-- यो बटन फेरि थपियो -->
+        <button id="viewSelectedPdfBtn" style="width:100%; background:#059669; margin-bottom:10px; display:none;" onclick="viewSelectedPdf()">📖 यो PDF पढ्नुहोस्</button>
+        
         <div id="pdfSearchInputs">
           <div class="search-input-row">
             <input type="text" class="pdf-query" placeholder="खोज्नको लागि शब्द लेख्नुहोस् (जस्तै: दफा 10)...">
@@ -145,10 +150,11 @@ function cleanName(name) {
   return name.replace(/\.pdf$/i, '');
 }
 
-// सिधै Chrome को नेटिभ PDF Viewer मा खोल्ने लिंक
-function getDirectPdfUrl(filepath) {
+// Mozilla PDF.js Viewer प्रयोग गरियो (हेडर र बटन दुवैको लागि)
+function getPdfViewerUrl(filepath) {
   const encodedPath = filepath.split('/').map(encodeURIComponent).join('/');
-  return `https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}/pdfs/${encodedPath}`;
+  const rawUrl = `https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}/pdfs/${encodedPath}`;
+  return `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(rawUrl)}`;
 }
 
 function buildTree(paths) {
@@ -167,7 +173,7 @@ function buildTree(paths) {
   return tree;
 }
 
-// मुख्य हेडर मेनु रेन्डर (Hover गर्दा PDF खोल्ने)
+// Hover मेनु रेन्डर (यसले अब Mozilla Viewer खोल्छ)
 function renderTree(tree, level = 0) {
   let html = '';
   let keys = Object.keys(tree).filter(k => k !== '_isFile' && k !== '_path');
@@ -189,8 +195,8 @@ function renderTree(tree, level = 0) {
         html += `<div class="sub-dropdown">${renderTree(node, level + 1)}</div>`;
         html += `</div>`;
       } else if (isFile) {
-        // PDF भए सिधा लिंक राख्ने
-        html += `<a href="${getDirectPdfUrl(node._path)}" target="_blank" class="dropdown-item">📄 ${esc(displayName)}</a>`;
+        // मुख्य हेडरमा क्लिक गर्दा सिधै PDF खोल्ने
+        html += `<a href="${getPdfViewerUrl(node._path)}" target="_blank" class="dropdown-item">📄 ${esc(displayName)}</a>`;
       }
     }
   });
@@ -247,6 +253,7 @@ function updatePdfSelect() {
   
   if (!selectedFolder) {
     pdfSelect.innerHTML = '<option value="">— PDF छान्नुहोस् —</option>';
+    toggleViewBtn();
     return;
   }
   
@@ -256,6 +263,25 @@ function updatePdfSelect() {
     html += `<option value="${esc(f)}">📄 ${esc(cleanName(f))}</option>`;
   });
   pdfSelect.innerHTML = html;
+  toggleViewBtn();
+}
+
+// PDF छानिएमा "PDF पढ्नुहोस्" बटन देखाउने
+function toggleViewBtn() {
+  const val = $('#searchPdfSelect').value;
+  if (val) {
+    $('#viewSelectedPdfBtn').style.display = 'block';
+  } else {
+    $('#viewSelectedPdfBtn').style.display = 'none';
+  }
+}
+
+// बटनबाट PDF खोल्ने
+function viewSelectedPdf() {
+  const val = $('#searchPdfSelect').value;
+  if (val) {
+    window.open(getPdfViewerUrl(val), '_blank');
+  }
 }
 
 function toggleAllFolders(source) {
@@ -320,7 +346,7 @@ function renderResults(results, query) {
     html += `<div class="pdf-group"><h4>📄 ${esc(g.filename)}</h4>`;
     g.matches.forEach(m => {
       const sec = m.section ? `<span class="badge">${esc(m.section)}</span>` : `<span class="badge">सन्दर्भ अज्ञात</span>`;
-      const url = getDirectPdfUrl(g.filename); 
+      const url = getPdfViewerUrl(g.filename); 
       html += `
         <div class="result-item">
           <div class="meta">${sec} पृष्ठ <strong>${m.page}</strong>
