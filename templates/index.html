@@ -31,20 +31,22 @@
   .answer{background:#ecfdf5;border-left:4px solid #10b981;padding:14px;border-radius:6px;white-space:pre-wrap;line-height:1.7;font-size:14px}
   .empty{color:#9ca3af;font-style:italic;padding:20px;text-align:center}
   
-  /* Dropdown CSS */
+  /* Dropdown CSS (Hover र Click दुवैको लागि) */
   .nav-menu { display: flex; flex-wrap: wrap; background: #fff; padding: 0; margin: 0; border-bottom: 1px solid #ddd; }
   .nav-item { position: relative; cursor: pointer; padding: 12px 18px; font-weight: 500; color: #333; font-size: 15px; transition: 0.2s; border-right: 1px solid #f0f0f0; }
   .nav-item:hover { background: #145db5; color: #fff; }
   
   .dropdown { display: none; position: absolute; top: 100%; left: 0; background: #fff; min-width: max-content; box-shadow: 0 4px 15px rgba(0,0,0,0.15); border-radius: 0 0 4px 4px; z-index: 100; border: 1px solid #ccc; border-top: none; padding: 0; text-align: left;}
-  .nav-item:hover > .dropdown { display: block; }
+  
+  /* यसले Hover र Click दुवैमा खोल्छ */
+  .nav-item:hover > .dropdown, .nav-item.active > .dropdown { display: block; }
   
   .dropdown-item { position: relative; padding: 9px 20px 9px 15px; color: #333; font-size: 13px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; white-space: nowrap; border-bottom: 1px solid #eee; transition: 0.1s; text-decoration: none; }
   .dropdown-item:last-child { border-bottom: none; }
   .dropdown-item:hover { background: #145db5; color: #fff; }
   
   .sub-dropdown { display: none; position: absolute; top: 0; left: 100%; background: #fff; min-width: max-content; box-shadow: 0 4px 15px rgba(0,0,0,0.15); border-radius: 0 4px 4px 4px; border: 1px solid #ccc; padding: 0; margin-left: -1px; }
-  .dropdown-item:hover > .sub-dropdown { display: block; }
+  .dropdown-item:hover > .sub-dropdown, .dropdown-item.active > .sub-dropdown { display: block; }
   
   .arrow { font-size: 10px; margin-left: 20px; color: #666; }
   .dropdown-item:hover .arrow { color: #fff; }
@@ -79,11 +81,11 @@
     </div>
   </div>
 
-  <!-- PDF हेर्ने भाग (Hover Menu) -->
+  <!-- PDF हेर्ने भाग -->
   <div class="card" style="padding:0; overflow:visible; border:1px solid #ddd;">
     <div class="nav-menu" style="background:#f8fafc;">
       <div class="nav-item" style="color:#1e3a8a; font-weight:bold; background:#e2e8f0;">
-        📄 PDF हेर्नुहोस् (माउस लगाउनुहोस्)
+        📄 PDF हेर्नुहोस् (क्लिक गर्नुहोस्)
         <div class="dropdown" id="viewPdfMenu" style="top:100%; left:0;"></div>
       </div>
     </div>
@@ -151,7 +153,7 @@
 
 <script>
 const $ = s => document.querySelector(s);
-const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'#39;'}[c]));
 
 const GITHUB_REPO = "barshapbp2026/any-pdf-";
 const GITHUB_BRANCH = "main";
@@ -160,13 +162,25 @@ function cleanName(name) {
   return name.replace(/\.pdf$/i, '');
 }
 
-// Mozilla PDF.js प्रयोग गर्ने (Google Docs Viewer को सट्टा)
+// सिधै Chrome को नेटिभ PDF Viewer मा खोल्ने लिंक
 function getDirectPdfUrl(filepath) {
   const encodedPath = filepath.split('/').map(encodeURIComponent).join('/');
-  const rawUrl = `https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}/pdfs/${encodedPath}`;
-  // Mozilla को PDF.js Viewer प्रयोग गरिएको
-  return `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(rawUrl)}`;
+  return `https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}/pdfs/${encodedPath}`;
 }
+
+// क्लिक गर्दा मेनु टोगल गर्ने (मोबाइलको लागि)
+function toggleMenu(el) {
+  // अरू खुला भएका मेनु बन्द गर्ने
+  document.querySelectorAll('.nav-item.active, .dropdown-item.active').forEach(item => {
+    if (item !== el) item.classList.remove('active');
+  });
+  el.classList.toggle('active');
+}
+
+// बाहिर क्लिक गर्दा सबै मेनु बन्द गर्ने
+document.addEventListener('click', function() {
+  document.querySelectorAll('.nav-item.active, .dropdown-item.active').forEach(el => el.classList.remove('active'));
+});
 
 function buildTree(paths) {
   const tree = {};
@@ -184,7 +198,7 @@ function buildTree(paths) {
   return tree;
 }
 
-// Hover मेनु रेन्डर
+// मेनु रेन्डर गर्ने (क्लिक इभेन्ट सहित)
 function renderTree(tree, isMainNav = false, level = 0) {
   let html = '';
   let keys = Object.keys(tree).filter(k => k !== '_isFile' && k !== '_path');
@@ -197,15 +211,16 @@ function renderTree(tree, isMainNav = false, level = 0) {
     const displayName = cleanName(key);
 
     if (level === 0 && isMainNav) {
-      html += `<div class="nav-item">${esc(displayName)}`;
+      html += `<div class="nav-item" onclick="event.stopPropagation(); toggleMenu(this)">${esc(displayName)}`;
       if (hasChildren) html += `<div class="dropdown">${renderTree(node, false, level + 1)}</div>`;
       html += `</div>`;
     } else {
       if (hasChildren) {
-        html += `<div class="dropdown-item">${esc(displayName)} <span class="arrow">▶</span>`;
+        html += `<div class="dropdown-item" onclick="event.stopPropagation(); toggleMenu(this);">${esc(displayName)} <span class="arrow">▶</span>`;
         html += `<div class="sub-dropdown">${renderTree(node, false, level + 1)}</div>`;
         html += `</div>`;
       } else if (isFile) {
+        // PDF खोल्ने लिंक
         html += `<a href="${getDirectPdfUrl(node._path)}" target="_blank" class="dropdown-item">📄 ${esc(displayName)}</a>`;
       }
     }
