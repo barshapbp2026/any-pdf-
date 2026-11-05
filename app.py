@@ -47,31 +47,47 @@ def search_in_pdf_bytes(pdf_bytes, query, max_results=30):
     return results
 
 def get_github_pdfs():
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/git/trees/{GITHUB_BRANCH}?recursive=1"
+    tree_url = f"https://api.github.com/repos/{GITHUB_REPO}/git/trees/{GITHUB_BRANCH}?recursive=1"
     try:
-        res = requests.get(url)
+        res = requests.get(tree_url, timeout=10)
         if res.status_code == 200:
-            tree = res.json().get("tree", [])
-            pdfs = []
-            for item in tree:
-                if item["type"] == "blob" and item["path"].startswith("pdfs/") and item["path"].lower().endswith(".pdf"):
-                    clean_path = item["path"].replace("pdfs/", "", 1)
-                    pdfs.append(clean_path)
+            data = res.json()
+            if data.get("truncated"):
+                print("⚠️ रिकर्सिभ ट्री काटियो, fallback प्रयोग गर्दै...")
+                return _fetch_all_pdfs_fallback()
+            
+            pdfs = [item["path"].replace("pdfs/", "", 1) for item in data.get("tree", []) 
+                    if item["type"] == "blob" and item["path"].startswith("pdfs/") and item["path"].lower().endswith(".pdf")]
             return sorted(pdfs)
     except Exception as e:
-        print("GitHub API error:", e)
-    return []
+        print(f"Tree API error: {e}")
+    return _fetch_all_pdfs_fallback()
+
+def _fetch_all_pdfs_fallback():
+    pdfs = []
+    def walk(path=""):
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}?ref={GITHUB_BRANCH}"
+        try:
+            res = requests.get(url, timeout=10)
+            if res.status_code != 200: return
+            for item in res.json():
+                if item["type"] == "dir":
+                    walk(item["path"])
+                elif item["type"] == "file" and item["path"].startswith("pdfs/") and item["path"].lower().endswith(".pdf"):
+                    pdfs.append(item["path"].replace("pdfs/", "", 1))
+        except Exception as e:
+            print(f"Fallback error at {path}: {e}")
+    walk("pdfs")
+    return sorted(pdfs)
 
 def get_pdf_bytes_from_github(filepath):
-    # URL Encode गर्दा slash (/) लाई बचाउने
-    safe_path = "/".join(requests.utils.quote(part) for part in f"pdfs/{filepath}".split("/"))
-    url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{safe_path}"
+    encoded_path = "/".join(requests.utils.quote(part) for part in f"pdfs/{filepath}".split("/"))
+    url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{encoded_path}"
     try:
-        res = requests.get(url)
-        if res.status_code == 200: 
+        res = requests.get(url, timeout=15)
+        if res.status_code == 200:
             return res.content
-        else:
-            print(f"GitHub fetch failed ({res.status_code}): {url}")
+        print(f"PDF fetch failed ({res.status_code}): {url}")
     except Exception as e:
         print(f"Fetch error: {e}")
     return None

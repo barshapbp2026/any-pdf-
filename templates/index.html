@@ -32,32 +32,31 @@
   .answer{background:#ecfdf5;border-left:4px solid #10b981;padding:14px;border-radius:6px;white-space:pre-wrap;line-height:1.7;font-size:14px}
   .empty{color:#9ca3af;font-style:italic;padding:20px;text-align:center}
   
-  /* Dropdown CSS */
+  /* Dropdown CSS (Hover मा खुल्ने) */
   .nav-menu { display: flex; flex-wrap: wrap; background: #fff; padding: 0; margin: 0; border-bottom: 1px solid #ddd; }
   .nav-item { position: relative; cursor: pointer; padding: 12px 18px; font-weight: 500; color: #333; font-size: 15px; transition: 0.2s; border-right: 1px solid #f0f0f0; }
   .nav-item:hover { background: #145db5; color: #fff; }
   
   .dropdown { display: none; position: absolute; top: 100%; left: 0; background: #fff; min-width: max-content; box-shadow: 0 4px 15px rgba(0,0,0,0.15); border-radius: 0 0 4px 4px; z-index: 100; border: 1px solid #ccc; border-top: none; padding: 0; text-align: left;}
-  .nav-item:hover > .dropdown, .nav-item.active > .dropdown { display: block; }
+  .nav-item:hover > .dropdown { display: block; }
   
   .dropdown-item { position: relative; padding: 9px 20px 9px 15px; color: #333; font-size: 13px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; white-space: nowrap; border-bottom: 1px solid #eee; transition: 0.1s; text-decoration: none; }
   .dropdown-item:last-child { border-bottom: none; }
   .dropdown-item:hover { background: #145db5; color: #fff; }
   
   .sub-dropdown { display: none; position: absolute; top: 0; left: 100%; background: #fff; min-width: max-content; box-shadow: 0 4px 15px rgba(0,0,0,0.15); border-radius: 0 4px 4px 4px; border: 1px solid #ccc; padding: 0; margin-left: -1px; }
-  .dropdown-item:hover > .sub-dropdown, .dropdown-item.active > .sub-dropdown { display: block; }
+  .dropdown-item:hover > .sub-dropdown { display: block; }
   
   .arrow { font-size: 10px; margin-left: 20px; color: #666; }
   .dropdown-item:hover .arrow { color: #fff; }
 
-  /* Custom Select Box using <details> */
+  /* Search Details CSS */
   .custom-select-box { border: 1px solid #d1d5db; border-radius: 6px; background: #fff; margin-bottom: 8px; position: relative; }
   .custom-select-box summary { padding: 9px 12px; cursor: pointer; font-size: 14px; font-weight: 500; list-style: none; display: flex; justify-content: space-between; align-items: center; user-select: none; }
   .custom-select-box summary::-webkit-details-marker { display: none; }
   .custom-select-box[open] summary { border-bottom: 1px solid #eee; }
-  .custom-select-box .details-content { max-height: 250px; overflow-y: auto; padding: 5px 0; }
+  .details-content { max-height: 250px; overflow-y: auto; padding: 5px 0; position: absolute; width: 100%; background: #fff; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.1); border: 1px solid #ddd; border-radius: 0 0 6px 6px; }
   
-  /* Nested details inside the select box */
   .details-content details { margin-left: 15px; border-left: 1px dashed #ddd; }
   .details-content summary { padding: 6px 10px; font-size: 13px; font-weight: normal; color: #333; cursor: pointer; list-style: none; }
   .details-content summary:hover { background: #f0f4f8; color: #145db5; }
@@ -88,17 +87,18 @@
 </header>
 
 <div class="container">
+  <!-- Main Nav Menu -->
   <div class="card" style="padding:0; overflow:visible; border:1px solid #ddd;">
     <div id="navMenu" class="nav-menu">
       <div class="empty">लोड हुँदैछ...</div>
     </div>
   </div>
 
-  <!-- PDF हेर्ने भाग -->
+  <!-- PDF हेर्ने भाग (Hover Menu) -->
   <div class="card" style="padding:0; overflow:visible; border:1px solid #ddd;">
     <div class="nav-menu" style="background:#f8fafc;">
-      <div class="nav-item" style="color:#1e3a8a; font-weight:bold; background:#e2e8f0;" onclick="toggleMenu(this)">
-        📄 PDF हेर्नुहोस् (यहाँ क्लिक गर्नुहोस्)
+      <div class="nav-item" style="color:#1e3a8a; font-weight:bold; background:#e2e8f0;">
+        📄 PDF हेर्नुहोस् (माउस लगाउनुहोस्)
         <div class="dropdown" id="viewPdfMenu" style="top:100%; left:0;"></div>
       </div>
     </div>
@@ -109,7 +109,7 @@
     <h2>🔍 खोज्नुहोस् (Search)</h2>
     <div class="grid2">
       
-      <!-- बायाँ: निश्चित PDF भित्र खोज्ने (नेस्टेड details प्रयोग गरिएको) -->
+      <!-- बायाँ: निश्चित PDF भित्र खोज्ने -->
       <div class="search-box">
         <h3>📄 निश्चित PDF भित्र खोज</h3>
         
@@ -118,9 +118,7 @@
             <span id="selectedPdfDisplay">— PDF छान्नुहोस् —</span>
             <span>▼</span>
           </summary>
-          <div class="details-content" id="searchPdfTreeMenu">
-            <!-- ट्री मेनु यहाँ लोड हुनेछ -->
-          </div>
+          <div class="details-content" id="searchPdfTreeMenu"></div>
         </details>
         
         <input type="hidden" id="selectedPdfValue" value="">
@@ -169,17 +167,8 @@
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-// मुख्य मेनुको लागि टोगल
-function toggleMenu(el) {
-  el.classList.toggle('active');
-}
-
 function cleanName(name) {
   return name.replace(/\.pdf$/i, '');
-}
-
-function safeUrl(filepath) {
-  return filepath.split('/').map(encodeURIComponent).join('/');
 }
 
 function buildTree(paths) {
@@ -198,7 +187,7 @@ function buildTree(paths) {
   return tree;
 }
 
-// मुख्य र PDF हेर्ने मेनु रेन्डर
+// Hover मेनु रेन्डर (सिधा <a> ट्याग प्रयोग गरिएको)
 function renderTree(tree, isMainNav = false, level = 0) {
   let html = '';
   let keys = Object.keys(tree).filter(k => k !== '_isFile' && k !== '_path');
@@ -211,24 +200,24 @@ function renderTree(tree, isMainNav = false, level = 0) {
     const displayName = cleanName(key);
 
     if (level === 0 && isMainNav) {
-      html += `<div class="nav-item" onclick="toggleMenu(this)">${esc(displayName)}`;
+      html += `<div class="nav-item">${esc(displayName)}`;
       if (hasChildren) html += `<div class="dropdown">${renderTree(node, false, level + 1)}</div>`;
       html += `</div>`;
     } else {
       if (hasChildren) {
-        html += `<div class="dropdown-item" onclick="event.stopPropagation(); toggleMenu(this);">${esc(displayName)} <span class="arrow">▶</span>`;
+        html += `<div class="dropdown-item">${esc(displayName)} <span class="arrow">▶</span>`;
         html += `<div class="sub-dropdown">${renderTree(node, false, level + 1)}</div>`;
         html += `</div>`;
       } else if (isFile) {
-        // <a> ट्यागले सिधै PDF खोल्छ
-        html += `<a href="/pdf/${safeUrl(node._path)}" target="_blank" class="dropdown-item">📄 ${esc(displayName)}</a>`;
+        const safeUrl = node._path.split('/').map(encodeURIComponent).join('/');
+        html += `<a href="/pdf/${safeUrl}" target="_blank" class="dropdown-item">📄 ${esc(displayName)}</a>`;
       }
     }
   });
   return html;
 }
 
-// सर्चको लागि details/summary भित्रको ट्री रेन्डर
+// सर्चको लागि details/summary ट्री रेन्डर
 function renderSearchTree(tree, level = 0) {
   let html = '';
   let keys = Object.keys(tree).filter(k => k !== '_isFile' && k !== '_path');
@@ -245,19 +234,17 @@ function renderSearchTree(tree, level = 0) {
       html += renderSearchTree(node, level + 1);
       html += `</details>`;
     } else if (isFile) {
-      // क्लिक गर्दा पप-अप बन्द गरेर सर्चको लागि PDF सेलेक्ट गर्ने
       html += `<a class="pdf-file" onclick="selectSearchPdf(event, '${esc(node._path)}', '${esc(displayName)}')">📄 ${esc(displayName)}</a>`;
     }
   });
   return html;
 }
 
-// PDF सेलेक्ट गर्ने फंक्शन
 function selectSearchPdf(e, path, name) {
   e.preventDefault();
   $('#selectedPdfValue').value = path;
   $('#selectedPdfDisplay').innerText = "📄 " + name;
-  $('#searchPdfDetails').removeAttribute('open'); // ड्रपडाउन बन्द गर्ने
+  $('#searchPdfDetails').removeAttribute('open');
 }
 
 let allFiles = [];
@@ -276,11 +263,8 @@ async function loadPdfs() {
   
   $('#navMenu').innerHTML = renderTree(tree, true, 0);
   $('#viewPdfMenu').innerHTML = renderTree(tree, false, 0);
-  
-  // details स्ट्रक्चर भित्र ट्री रेन्डर गर्ने
   $('#searchPdfTreeMenu').innerHTML = renderSearchTree(tree);
 
-  // चेकबक्स
   let folderSet = new Set();
   allFiles.forEach(f => {
     let parts = f.split('/');
@@ -366,7 +350,8 @@ function renderResults(results, query) {
     html += `<div class="pdf-group"><h4>📄 ${esc(g.filename)}</h4>`;
     g.matches.forEach(m => {
       const sec = m.section ? `<span class="badge">${esc(m.section)}</span>` : `<span class="badge">सन्दर्भ अज्ञात</span>`;
-      const url = `/pdf/${safeUrl(g.filename)}#page=${m.page}`;
+      const safeUrl = g.filename.split('/').map(encodeURIComponent).join('/');
+      const url = `/pdf/${safeUrl}#page=${m.page}`;
       html += `
         <div class="result-item">
           <div class="meta">${sec} पृष्ठ <strong>${m.page}</strong>
