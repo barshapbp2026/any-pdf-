@@ -31,7 +31,7 @@
   .answer{background:#ecfdf5;border-left:4px solid #10b981;padding:14px;border-radius:6px;white-space:pre-wrap;line-height:1.7;font-size:14px}
   .empty{color:#9ca3af;font-style:italic;padding:20px;text-align:center}
   
-  /* Dropdown CSS (Hover मा खुल्ने) */
+  /* Dropdown CSS */
   .nav-menu { display: flex; flex-wrap: wrap; background: #fff; padding: 0; margin: 0; border-bottom: 1px solid #ddd; }
   .nav-item { position: relative; cursor: pointer; padding: 12px 18px; font-weight: 500; color: #333; font-size: 15px; transition: 0.2s; border-right: 1px solid #f0f0f0; }
   .nav-item:hover { background: #145db5; color: #fff; }
@@ -73,7 +73,6 @@
 </header>
 
 <div class="container">
-  <!-- Main Nav Menu -->
   <div class="card" style="padding:0; overflow:visible; border:1px solid #ddd;">
     <div id="navMenu" class="nav-menu">
       <div class="empty">लोड हुँदैछ...</div>
@@ -107,7 +106,7 @@
           <option value="">— PDF छान्नुहोस् —</option>
         </select>
 
-        <!-- PDF हेर्ने बटन (सर्च नगरी पनि हेर्न सकिने) -->
+        <!-- PDF हेर्ने बटन -->
         <button id="viewSelectedPdfBtn" style="width:100%; background:#059669; margin-bottom:10px; display:none;" onclick="viewSelectedPdf()">📖 यो PDF पढ्नुहोस्</button>
         
         <div id="pdfSearchInputs">
@@ -161,11 +160,12 @@ function cleanName(name) {
   return name.replace(/\.pdf$/i, '');
 }
 
-// PDF लाई Google Docs Viewer मार्फत खोल्ने (मोबाइलमा पनि सजिलै खुल्छ)
+// Mozilla PDF.js प्रयोग गर्ने (Google Docs Viewer को सट्टा)
 function getDirectPdfUrl(filepath) {
   const encodedPath = filepath.split('/').map(encodeURIComponent).join('/');
   const rawUrl = `https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}/pdfs/${encodedPath}`;
-  return `https://docs.google.com/viewer?url=${encodeURIComponent(rawUrl)}&embedded=true`;
+  // Mozilla को PDF.js Viewer प्रयोग गरिएको
+  return `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(rawUrl)}`;
 }
 
 function buildTree(paths) {
@@ -277,7 +277,6 @@ function updatePdfSelect() {
   toggleViewBtn();
 }
 
-// PDF छानिएमा "PDF पढ्नुहोस्" बटन देखाउने
 function toggleViewBtn() {
   const val = $('#searchPdfSelect').value;
   if (val) {
@@ -287,7 +286,6 @@ function toggleViewBtn() {
   }
 }
 
-// छानिएको PDF सिधै खोल्ने
 function viewSelectedPdf() {
   const val = $('#searchPdfSelect').value;
   if (val) {
@@ -357,7 +355,7 @@ function renderResults(results, query) {
     html += `<div class="pdf-group"><h4>📄 ${esc(g.filename)}</h4>`;
     g.matches.forEach(m => {
       const sec = m.section ? `<span class="badge">${esc(m.section)}</span>` : `<span class="badge">सन्दर्भ अज्ञात</span>`;
-      const url = `${getDirectPdfUrl(g.filename)}#page=${m.page}`; // Google Viewer URL
+      const url = getDirectPdfUrl(g.filename); 
       html += `
         <div class="result-item">
           <div class="meta">${sec} पृष्ठ <strong>${m.page}</strong>
