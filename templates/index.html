@@ -31,14 +31,12 @@
   .answer{background:#ecfdf5;border-left:4px solid #10b981;padding:14px;border-radius:6px;white-space:pre-wrap;line-height:1.7;font-size:14px}
   .empty{color:#9ca3af;font-style:italic;padding:20px;text-align:center}
   
-  /* Dropdown CSS (Pure Hover for PC) */
+  /* Dropdown CSS (होभर गर्दा खुल्ने) */
   .nav-menu { display: flex; flex-wrap: wrap; background: #fff; padding: 0; margin: 0; border-bottom: 1px solid #ddd; }
   .nav-item { position: relative; cursor: pointer; padding: 12px 18px; font-weight: 500; color: #333; font-size: 15px; transition: 0.2s; border-right: 1px solid #f0f0f0; }
   .nav-item:hover { background: #145db5; color: #fff; }
   
   .dropdown { display: none; position: absolute; top: 100%; left: 0; background: #fff; min-width: max-content; box-shadow: 0 4px 15px rgba(0,0,0,0.15); border-radius: 0 0 4px 4px; z-index: 100; border: 1px solid #ccc; border-top: none; padding: 0; text-align: left;}
-  
-  /* Hover गर्दा खुल्ने */
   .nav-item:hover > .dropdown { display: block; }
   
   .dropdown-item { position: relative; padding: 9px 20px 9px 15px; color: #333; font-size: 13px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; white-space: nowrap; border-bottom: 1px solid #eee; transition: 0.1s; text-decoration: none; }
@@ -46,8 +44,6 @@
   .dropdown-item:hover { background: #145db5; color: #fff; }
   
   .sub-dropdown { display: none; position: absolute; top: 0; left: 100%; background: #fff; min-width: max-content; box-shadow: 0 4px 15px rgba(0,0,0,0.15); border-radius: 0 4px 4px 4px; border: 1px solid #ccc; padding: 0; margin-left: -1px; }
-  
-  /* Hover गर्दा सब-मेनु खुल्ने */
   .dropdown-item:hover > .sub-dropdown { display: block; }
   
   .arrow { font-size: 10px; margin-left: 20px; color: #666; }
@@ -77,19 +73,10 @@
 </header>
 
 <div class="container">
+  <!-- मुख्य हेडर मेनु (Hover गर्दा सिधै PDF सम्म पुर्याउने) -->
   <div class="card" style="padding:0; overflow:visible; border:1px solid #ddd;">
     <div id="navMenu" class="nav-menu">
       <div class="empty">लोड हुँदैछ...</div>
-    </div>
-  </div>
-
-  <!-- PDF हेर्ने भाग (Hover Menu) -->
-  <div class="card" style="padding:0; overflow:visible; border:1px solid #ddd;">
-    <div class="nav-menu" style="background:#f8fafc;">
-      <div class="nav-item" style="color:#1e3a8a; font-weight:bold; background:#e2e8f0;">
-        📄 PDF हेर्नुहोस् (माउस लगाउनुहोस्)
-        <div class="dropdown" id="viewPdfMenu" style="top:100%; left:0;"></div>
-      </div>
     </div>
   </div>
 
@@ -101,17 +88,12 @@
       <!-- बायाँ: निश्चित PDF भित्र खोज्ने -->
       <div class="search-box">
         <h3>📄 निश्चित PDF भित्र खोज</h3>
-        
         <select id="searchFolderSelect" onchange="updatePdfSelect()">
           <option value="">— पहिले फोल्डर छान्नुहोस् —</option>
         </select>
-        
-        <select id="searchPdfSelect" onchange="toggleViewBtn()">
+        <select id="searchPdfSelect">
           <option value="">— PDF छान्नुहोस् —</option>
         </select>
-
-        <button id="viewSelectedPdfBtn" style="width:100%; background:#059669; margin-bottom:10px; display:none;" onclick="viewSelectedPdf()">📖 यो PDF पढ्नुहोस्</button>
-        
         <div id="pdfSearchInputs">
           <div class="search-input-row">
             <input type="text" class="pdf-query" placeholder="खोज्नको लागि शब्द लेख्नुहोस् (जस्तै: दफा 10)...">
@@ -163,11 +145,10 @@ function cleanName(name) {
   return name.replace(/\.pdf$/i, '');
 }
 
-// Mozilla PDF.js को लिंक (Chrome मा सिधै खोल्न)
-function getPdfViewerUrl(filepath) {
+// सिधै Chrome को नेटिभ PDF Viewer मा खोल्ने लिंक
+function getDirectPdfUrl(filepath) {
   const encodedPath = filepath.split('/').map(encodeURIComponent).join('/');
-  const rawUrl = `https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}/pdfs/${encodedPath}`;
-  return `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(rawUrl)}`;
+  return `https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}/pdfs/${encodedPath}`;
 }
 
 function buildTree(paths) {
@@ -186,8 +167,8 @@ function buildTree(paths) {
   return tree;
 }
 
-// Hover मेनु रेन्डर
-function renderTree(tree, isMainNav = false, level = 0) {
+// मुख्य हेडर मेनु रेन्डर (Hover गर्दा PDF खोल्ने)
+function renderTree(tree, level = 0) {
   let html = '';
   let keys = Object.keys(tree).filter(k => k !== '_isFile' && k !== '_path');
   keys.sort((a, b) => a.localeCompare(b, 'ne', { numeric: true }));
@@ -198,18 +179,18 @@ function renderTree(tree, isMainNav = false, level = 0) {
     const isFile = node._isFile;
     const displayName = cleanName(key);
 
-    if (level === 0 && isMainNav) {
+    if (level === 0) {
       html += `<div class="nav-item">${esc(displayName)}`;
-      if (hasChildren) html += `<div class="dropdown">${renderTree(node, false, level + 1)}</div>`;
+      if (hasChildren) html += `<div class="dropdown">${renderTree(node, level + 1)}</div>`;
       html += `</div>`;
     } else {
       if (hasChildren) {
         html += `<div class="dropdown-item">${esc(displayName)} <span class="arrow">▶</span>`;
-        html += `<div class="sub-dropdown">${renderTree(node, false, level + 1)}</div>`;
+        html += `<div class="sub-dropdown">${renderTree(node, level + 1)}</div>`;
         html += `</div>`;
       } else if (isFile) {
-        // Mozilla PDF.js को लिंक प्रयोग गरियो (Chrome मा खुल्ने)
-        html += `<a href="${getPdfViewerUrl(node._path)}" target="_blank" class="dropdown-item">📄 ${esc(displayName)}</a>`;
+        // PDF भए सिधा लिंक राख्ने
+        html += `<a href="${getDirectPdfUrl(node._path)}" target="_blank" class="dropdown-item">📄 ${esc(displayName)}</a>`;
       }
     }
   });
@@ -229,8 +210,7 @@ async function loadPdfs() {
   }
   
   const tree = buildTree(allFiles);
-  $('#navMenu').innerHTML = renderTree(tree, true, 0);
-  $('#viewPdfMenu').innerHTML = renderTree(tree, false, 0);
+  $('#navMenu').innerHTML = renderTree(tree, 0);
 
   let folderSet = new Set();
   allFiles.forEach(f => {
@@ -267,7 +247,6 @@ function updatePdfSelect() {
   
   if (!selectedFolder) {
     pdfSelect.innerHTML = '<option value="">— PDF छान्नुहोस् —</option>';
-    toggleViewBtn();
     return;
   }
   
@@ -277,24 +256,6 @@ function updatePdfSelect() {
     html += `<option value="${esc(f)}">📄 ${esc(cleanName(f))}</option>`;
   });
   pdfSelect.innerHTML = html;
-  toggleViewBtn();
-}
-
-function toggleViewBtn() {
-  const val = $('#searchPdfSelect').value;
-  if (val) {
-    $('#viewSelectedPdfBtn').style.display = 'block';
-  } else {
-    $('#viewSelectedPdfBtn').style.display = 'none';
-  }
-}
-
-// PDF पढ्ने बटनले पनि Mozilla लिंक नै खोल्ने
-function viewSelectedPdf() {
-  const val = $('#searchPdfSelect').value;
-  if (val) {
-    window.open(getPdfViewerUrl(val), '_blank');
-  }
 }
 
 function toggleAllFolders(source) {
@@ -359,7 +320,7 @@ function renderResults(results, query) {
     html += `<div class="pdf-group"><h4>📄 ${esc(g.filename)}</h4>`;
     g.matches.forEach(m => {
       const sec = m.section ? `<span class="badge">${esc(m.section)}</span>` : `<span class="badge">सन्दर्भ अज्ञात</span>`;
-      const url = getPdfViewerUrl(g.filename); 
+      const url = getDirectPdfUrl(g.filename); 
       html += `
         <div class="result-item">
           <div class="meta">${sec} पृष्ठ <strong>${m.page}</strong>
