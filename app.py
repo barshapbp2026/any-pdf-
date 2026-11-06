@@ -162,79 +162,93 @@ def search():
 def chat():
     data = request.get_json() or {}
     queries = data.get("queries", [])
-    raw_api_key = (data.get("api_key") or "").strip()
+    user_key = (data.get("api_key") or "").strip()
     
-    if raw_api_key.startswith("GEMINI_API_KEY="):
-        raw_api_key = raw_api_key.split("=", 1)[1].strip()
+    # Key सफा गर्ने (यदि GEMINI_API_KEY=... भनेर हालिएको छ भने)
+    if user_key.startswith("GEMINI_API_KEY="):
+        user_key = user_key.split("=", 1)[1].strip()
+
+    # Fallback Keys को सूची बनाउने
+    keys_to_try = []
+    if user_key:
+        keys_to_try.append(user_key)
     
-    api_key = raw_api_key
-    if not api_key:
-        api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    env_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if env_key and env_key not in keys_to_try:
+        keys_to_try.append(env_key)
+
+    if not keys_to_try:
+        return jsonify({"error": "कृपया एउटा API Key हाल्नुहोस् वा Netrun मा GEMINI_API_KEY राख्नुहोस्।"}), 400
 
     if not queries or not any(q.strip() for q in queries):
         return jsonify({"error": "प्रश्न खाली छ।"}), 400
         
-    # च्याटको स्कोप (mode, target, targets) प्राप्त गर्ने
     mode = data.get("mode", "all")
     target = data.get("target", "")
     targets = data.get("targets", [])
     
     query_str = " AND ".join(queries)
     
-    # तोकिएको PDF वा फोल्डर भित्र मात्र खोज्ने
     filepath = target if mode == "specific" else None
     folders = targets if mode == "folder" else None
     results = collect_results(queries, filepaths=filepath, folders=folders)
     
-    if api_key:
-        ctx_lines = []
-        for g in results[:5]:
-            for m in g["matches"][:6]:
-                sec = m["section"] or "सन्दर्भ अज्ञात"
-                ctx_lines.append(f"[PDF: {g['filename']} | पृष्ठ {m['page']} | {sec}] {m['snippet']}")
-        context = "
+    ctx_lines = []
+    for g in results[:5]:
+        for m in g["matches"][:6]:
+            sec = m["section"] or "सन्दर्भ अज्ञात"
+            ctx_lines.append(f"[PDF: {g['filename']} | पृष्ठ {m['page']} | {sec}] {m['snippet']}")
+    context = "
 ".join(ctx_lines) if ctx_lines else "कुनै मिल्दो सामग्री भेटिएन।"
-        
-        # Gemini लाई बाहिरी ज्ञान प्रयोग नगर्न कडा निर्देशन
-        prompt = (
-            "तपाईं नेपाली कानुनी सहायक हुनुहुन्छ। तल दिइएको PDF सामग्रीको आधारमा **मात्र** प्रश्नको जवाफ दिनुहोस्। "
-            "बाहिरी ज्ञान (Internet) वा आफ्नो जानकारी प्रयोग गर्न **पूर्ण रूपमा मनाही छ**। "
-            "यदि जवाफ दिइएको PDF सामग्रीमा छैन भने, 'माफ गर्नुहोस्, यो जानकारी दिइएको PDF मा भेटिएन।' भन्नुहोस्।
+    
+    prompt = (
+        "तपाईं नेपाली कानुनी सहायक हुनुहुन्छ। तल दिइएको PDF सामग्रीको आधारमा **मात्र** प्रश्नको जवाफ दिनुहोस्। "
+        "बाहिरी ज्ञान (Internet) वा आफ्नो जानकारी प्रयोग गर्न **पूर्ण रूपमा मनाही छ**। "
+        "यदि जवाफ दिइएको PDF सामग्रीमा छैन भने, 'माफ गर्नुहोस्, यो जानकारी दिइएको PDF मा भेटिएन।' भन्नुहोस्।
 
 "
-            f"PDF सामग्री:
+        f"PDF सामग्री:
 {context}
 
 प्रश्न: {query_str}
 "
-        )
-        
-                models_to_try = [
-            "gemini-2.0-flash", 
-            "gemini-1.5-flash", 
-            "gemini-1.5-pro"
+    )
+    
+    # गुगलले २०२६ मा सिफारिस गरेका नयाँ र स्थिर मोडेलहरू
+            models_to_try = [
+            "gemini-3.8-flash",
+            "gemini-3.5-flash-lite",
+            "gemini-flash-latest",
+            "gemini-2.0-flash",
+            "gemini-1.5-pro",
+            "gemini-1.5-flash"
         ]
-        last_error = ""
+    
+    last_error = ""
+    # Key Fallback र Model Fallback दुवै लूपमा चलाउने
+    for api_key in keys_to_try:
         for model in models_to_try:
             try:
-                url = f"https://generativelanguage.googleapis.com/v1/models/{model}:generateContent?key={api_key}"
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
                 r = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=30)
                 if r.status_code == 200:
                     j = r.json()
                     if "candidates" in j and len(j["candidates"]) > 0:
                         return jsonify({"answer": j["candidates"][0]["content"]["parts"][0]["text"], "results": results, "mode": "gemini"})
                 else:
-                    try: last_error = r.json().get("error", {}).get("message", f"HTTP {r.status_code}")
-                    except: last_error = f"HTTP {r.status_code}"
+                    try: 
+                        err_data = r.json()
+                        last_error = err_data.get("error", {}).get("message", f"HTTP {r.status_code}")
+                    except: 
+                        last_error = f"HTTP {r.status_code}"
             except Exception as e:
                 last_error = str(e)
                 
-        fallback_msg = f"⚠️ (Gemini API समस्या: {last_error}। स्थानीय खोज नतिजा तल छ।)
+    # यदि सबै Key र Model फेल भए, स्थानीय खोज नतिजा देखाउने
+    fallback_msg = f"⚠️ (Gemini API समस्या: {last_error}। स्थानीय खोज नतिजा तल छ।)
 
 "
-        return jsonify({"answer": fallback_msg + "PDF हरूमा भेटिएका मिल्दा स्थानहरू तल देखाइएका छन्।", "results": results, "mode": "fallback"})
-        
-    return jsonify({"answer": "PDF हरूमा भेटिएका मिल्दा स्थानहरू तल देखाइएका छन्।", "results": results, "mode": "traditional"})
+    return jsonify({"answer": fallback_msg + "PDF हरूमा भेटिएका मिल्दा स्थानहरू तल देखाइएका छन्।", "results": results, "mode": "fallback"})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
