@@ -11,24 +11,10 @@ app = Flask(__name__)
 GITHUB_REPO = "barshapbp2026/any-pdf-"
 GITHUB_BRANCH = "main"
 
-def normalize_to_header_number(query):
-    """कुनै पनि नम्बरलाई नेपालीमा बदलेर अन्त्यमा डट थप्ने (जस्तै: 34 -> ३४.)"""
-    if not query: return ""
-    nepali_map = str.maketrans("0123456789", "०१२३४५६७८९")
-    q_nepali = query.translate(nepali_map)
-    clean_q = re.sub(r'[^\d०-९]', '', q_nepali)
-    if clean_q:
-        return clean_q + "."
-    return query.strip()
-
 def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
     results = []
-    norm_query = normalize_to_header_number(query)
+    q_digits = re.sub(r'[^\d०-९]', '', query.strip())
     
-    is_num_search = norm_query.endswith(".") and any(c in "०१२३४५६७८९" for c in norm_query)
-    clean_q_text = re.sub(r'\s+', '', query)
-    num_only = norm_query.replace(".", "")
-
     expected_prefix = "दफा"
     context_lower = folder_context.lower()
     if "संविधान" in context_lower: expected_prefix = "धारा"
@@ -37,38 +23,59 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
 
     try:
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        for page_num in range(len(doc)):
-            page_text = doc[page_num].get_text("text")
-            lines = page_text.split('\n')
+        
+        if q_digits:
+            # अंग्रेजी र नेपाली दुवै अंकको भेरिएसन बनाउने
+            q_nep = q_digits.translate(str.maketrans("0123456789", "०१२३४५६७८९"))
+            q_ascii = q_digits.translate(str.maketrans("०१२३४५६७८९", "0123456789"))
+            nums = list(set([q_nep, q_ascii]))
             
-            for line in lines:
-                clean_line = line.strip()
-                if not clean_line: continue
-                
-                # यदि नम्बर सर्च हो भने
-                if is_num_search:
-                    # लाइनको सुरुमा भएका सबै अदृश्य क्यारेक्टर र स्पेस हटाउने
-                    line_clean = re.sub(r'^[^\w\u0900-\u097F]+', '', clean_line)
+            # डट र स्पेसका सम्भावित क्यारेक्टरहरू (अंग्रेजी डट, नेपाली दण्ड, ब्राकेट आदि)
+            sep_chars = '.।॰·)|: \t、｡'
+            
+            for page_num in range(len(doc)):
+                page_text = doc[page_num].get_text("text")
+                for line in page_text.split('\n'):
+                    if not line.strip(): continue
                     
-                    # ठ्याक्कै ३४. बाट सुरु भएको छ कि छैन जाँच्ने
-                    target_str = f"{num_only}."
-                    if line_clean.startswith(target_str):
+                    # अदृश्य क्यारेक्टर (ZWNJ, ZWJ, NBSP) हटाउने
+                    line_clean = re.sub(r'[\u200b\u200c\u200d\ufeff\u00a0]', ' ', line).strip()
+                    
+                    # लाइनको सुरुका सबै डिजिट नभएका क्यारेक्टर हटाउने
+                    line_clean = re.sub(r'^[^\d०-९]+', '', line_clean)
+                    
+                    matched = False
+                    for num in nums:
+                        if line_clean.startswith(num):
+                            rest = line_clean[len(num):]
+                            if not rest or (rest and rest[0] in sep_chars):
+                                matched = True
+                                break
+                    
+                    if matched:
                         results.append({
                             "page": page_num + 1,
-                            "section": f"{expected_prefix} {num_only}",
-                            "snippet": clean_line[:150]
+                            "section": f"{expected_prefix} {q_nep}",
+                            "snippet": line.strip()[:200]
                         })
-                else:
-                    # टेक्स्ट सर्च (जस्तै: टायल चेक)
-                    if clean_q_text in re.sub(r'\s+', '', clean_line):
+                        if len(results) >= max_results: break
+                
+                if len(results) >= max_results: break
+        else:
+            # टेक्स्ट सर्च (जस्तै: टायल चेक)
+            clean_q = re.sub(r'\s+', '', query)
+            for page_num in range(len(doc)):
+                page_text = doc[page_num].get_text("text")
+                for line in page_text.split('\n'):
+                    if clean_q in re.sub(r'\s+', '', line):
                         results.append({
                             "page": page_num + 1,
                             "section": "सन्दर्भ",
-                            "snippet": clean_line[:150]
+                            "snippet": line.strip()[:200]
                         })
-                        
+                        if len(results) >= max_results: break
                 if len(results) >= max_results: break
-            if len(results) >= max_results: break
+        
         doc.close()
     except Exception as e:
         print(f"[search_in_pdf_bytes] Error: {e}")
@@ -138,6 +145,24 @@ def serve_pdf(filepath):
     if pdf_data: 
         return pdf_data, 200, {'Content-Type': 'application/pdf'}
     return "PDF File not found", 404
+
+@app.route("/debug/<path:filepath>")
+def debug_pdf(filepath):
+    pdf_data = get_pdf_bytes_from_github(filepath)
+    if not pdf_data:
+        return "PDF not found", 404
+    
+    doc = fitz.open(stream=pdf_data, filetype="pdf")
+    output = [f"Total pages: {len(doc)}", f"File: {filepath}", "======================================"]
+    
+    for page_num in range(len(doc)):
+        page_text = doc[page_num].get_text("text")
+        for line in page_text.split('\n'):
+            if '३४' in line or '34' in line:
+                output.append(f"Page {page_num+1}: {repr(line[:150])}")
+    
+    doc.close()
+    return "<pre style='font-family:monospace; padding:20px; background:#f4f4f4;'>" + "\n".join(output) + "</pre>"
 
 @app.route("/check_api_key", methods=["POST"])
 def check_api_key():
