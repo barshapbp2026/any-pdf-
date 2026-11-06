@@ -13,7 +13,7 @@ NEPALI_DIGITS = str.maketrans("०१२३४५६७८९", "0123456789")
 def _norm(t):
     return t.lower().translate(NEPALI_DIGITS)
 
-SECTION_RE = re.compile(r"((?:धारा|दफा|नियम|उपनियम)\s*[\d०-९]+)")
+SECTION_RE = re.compile(r"((?:धारा|दफा|नियम|उपनियम|निर्देशन|अनुसूची)\s*[\d०-९]+)")
 
 def search_in_pdf_bytes(pdf_bytes, query, max_results=30):
     results = []
@@ -53,9 +53,7 @@ def get_github_pdfs():
         if res.status_code == 200:
             data = res.json()
             if data.get("truncated"):
-                print("⚠️ रिकर्सिभ ट्री काटियो, fallback प्रयोग गर्दै...")
                 return _fetch_all_pdfs_fallback()
-            
             pdfs = [item["path"].replace("pdfs/", "", 1) for item in data.get("tree", []) 
                     if item["type"] == "blob" and item["path"].startswith("pdfs/") and item["path"].lower().endswith(".pdf")]
             return sorted(pdfs)
@@ -75,8 +73,7 @@ def _fetch_all_pdfs_fallback():
                     walk(item["path"])
                 elif item["type"] == "file" and item["path"].startswith("pdfs/") and item["path"].lower().endswith(".pdf"):
                     pdfs.append(item["path"].replace("pdfs/", "", 1))
-        except Exception as e:
-            print(f"Fallback error at {path}: {e}")
+        except Exception: pass
     walk("pdfs")
     return sorted(pdfs)
 
@@ -85,16 +82,12 @@ def get_pdf_bytes_from_github(filepath):
     url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{encoded_path}"
     try:
         res = requests.get(url, timeout=15)
-        if res.status_code == 200:
-            return res.content
-        print(f"PDF fetch failed ({res.status_code}): {url}")
-    except Exception as e:
-        print(f"Fetch error: {e}")
+        if res.status_code == 200: return res.content
+    except Exception: pass
     return None
 
 def collect_results(queries, filepaths=None, folders=None):
     all_files = get_github_pdfs()
-    
     if filepaths:
         files_to_search = filepaths
     elif folders:
@@ -112,8 +105,7 @@ def collect_results(queries, filepaths=None, folders=None):
                     if matches:
                         if not any(x['filename'] == f and x['matches'] == matches for x in out):
                             out.append({"filename": f, "matches": matches, "query": q})
-        except Exception as e:
-            print(f"Error reading {f}: {e}")
+        except Exception: pass
     return out
 
 @app.route("/")
@@ -134,18 +126,36 @@ def serve_pdf(filepath):
 @app.route("/search", methods=["POST"])
 def search():
     data = request.get_json() or {}
-    queries = data.get("queries", [])
     mode = data.get("mode", "all")
     target = data.get("target", "")
     targets = data.get("targets", [])
     
-    if not queries or not any(q.strip() for q in queries):
-        return jsonify({"error": "खोज शब्द खाली छ।"}), 400
+    # फोल्डर सर्चको लागि सामान्य queries
+    queries = data.get("queries", [])
+    
+    # निश्चित PDF सर्चको लागि छुट्टाछुट्टै फिल्डहरू
+    dhara = (data.get("dhara") or "").strip()
+    dafa = (data.get("dafa") or "").strip()
+    niyam = (data.get("niyam") or "").strip()
+    nirdeshan = (data.get("nirdeshan") or "").strip()
+    anusuchi = (data.get("anusuchi") or "").strip()
+    general = (data.get("general") or "").strip()
+    
+    final_queries = []
+    if dhara: final_queries.append(f"धारा {dhara}")
+    if dafa: final_queries.append(f"दफा {dafa}")
+    if niyam: final_queries.append(f"नियम {niyam}")
+    if nirdeshan: final_queries.append(f"निर्देशन {nirdeshan}")
+    if anusuchi: final_queries.append(f"अनुसूची {anusuchi}")
+    if general: final_queries.append(general)
+    if queries: final_queries.extend(queries) # पुरानो फोल्डर सर्चको लागि
+    
+    if not final_queries:
+        return jsonify({"error": "खोज शब्द खाली छ। कृपया कुनै एउटा बक्समा लेख्नुहोस्।"}), 400
         
     filepath = target if mode == "specific" else None
     folders = targets if mode == "folder" else None
-    
-    results = collect_results(queries, filepaths=filepath, folders=folders)
+    results = collect_results(final_queries, filepaths=filepath, folders=folders)
     return jsonify({"results": results})
 
 @app.route("/chat", methods=["POST"])

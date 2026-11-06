@@ -60,6 +60,9 @@
   .multi-select-box input[type="checkbox"] { width: 16px; height: 16px; margin: 0; cursor: pointer; }
   .select-all-row { font-weight: bold; background: #e0f2fe; border-radius: 4px; padding: 8px !important; margin-bottom: 5px; border: none !important; color: #0369a1;}
 
+  /* Grid for specific search boxes */
+  .search-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+
   @media(max-width:700px){.grid2{grid-template-columns:1fr}header input{width:150px}}
 </style>
 </head>
@@ -80,6 +83,8 @@
   <div class="card">
     <h2>🔍 खोज्नुहोस् (Search)</h2>
     <div class="grid2">
+      
+      <!-- बायाँ: निश्चित PDF भित्र खोज्ने -->
       <div class="search-box">
         <h3>📄 निश्चित PDF भित्र खोज</h3>
         <select id="searchFolderSelect" onchange="updatePdfSelect()">
@@ -89,21 +94,25 @@
           <option value="">— PDF छान्नुहोस् —</option>
         </select>
         
-        <!-- यहाँ दुईवटा बटन राखिएको छ (हेर्न र डाउनलोड) -->
         <div style="display:flex; gap:10px; margin-bottom:10px;">
             <button id="viewSelectedPdfBtn" style="flex:1; background:#059669; display:none;" onclick="viewSelectedPdf()">📖 यो PDF पढ्नुहोस्</button>
             <button id="downloadSelectedPdfBtn" style="flex:1; background:#dc2626; display:none;" onclick="downloadSelectedPdf()">⬇️ डाउनलोड</button>
         </div>
 
-        <div id="pdfSearchInputs">
-          <div class="search-input-row">
-            <input type="text" class="pdf-query" placeholder="खोज्नको लागि शब्द लेख्नुहोस् (जस्तै: दफा 10)...">
-            <button class="plus-btn" onclick="addSearchInput('pdfSearchInputs', 'pdf-query')" title="अर्को थप्नुहोस्">+</button>
-          </div>
+        <!-- ६ वटा छुट्टाछुट्टै सर्च बक्सहरू -->
+        <div class="search-grid">
+            <input type="text" id="input-dhara" class="pdf-query" placeholder="धारा (जस्तै: १०)">
+            <input type="text" id="input-dafa" class="pdf-query" placeholder="दफा (जस्तै: ५)">
+            <input type="text" id="input-niyam" class="pdf-query" placeholder="नियम (जस्तै: ३)">
+            <input type="text" id="input-nirdeshan" class="pdf-query" placeholder="निर्देशन">
+            <input type="text" id="input-anusuchi" class="pdf-query" placeholder="अनुसूची">
+            <input type="text" id="input-general" class="pdf-query" placeholder="अन्य शब्द (जस्तै: मालपोत)">
         </div>
+
         <button onclick="doSearch('specific')" style="width:100%; margin-top:10px;">PDF भित्र खोज्नुहोस्</button>
       </div>
 
+      <!-- दायाँ: फोल्डर भित्र खोज्ने -->
       <div class="search-box">
         <h3>📁 फोल्डर / शीर्षक भित्र खोज</h3>
         <div class="multi-select-box" id="folderCheckboxes"></div>
@@ -115,6 +124,7 @@
         </div>
         <button onclick="doSearch('folder')" style="width:100%; margin-top:10px;">छानिएका फोल्डरमा खोज्नुहोस्</button>
       </div>
+
     </div>
   </div>
 
@@ -141,20 +151,17 @@ const GITHUB_BRANCH = "main";
 
 function cleanName(name) { return name.replace(/\.pdf$/i, ''); }
 
-// PDF हेर्नको लागि लिंक (Google Viewer)
 function getPdfViewerUrl(filepath) {
   const encodedPath = filepath.split('/').map(encodeURIComponent).join('/');
   const rawUrl = `https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}/pdfs/${encodedPath}`;
   return `https://docs.google.com/viewer?url=${encodeURIComponent(rawUrl)}&embedded=true`;
 }
 
-// PDF डाउनलोड गर्नको लागि लिंक (Raw Link)
 function getDownloadUrl(filepath) {
   const encodedPath = filepath.split('/').map(encodeURIComponent).join('/');
   return `https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}/pdfs/${encodedPath}`;
 }
 
-// हेडरमा क्लिक गर्दा यही फंक्शन चल्छ (जसले PDF खोल्छ)
 window.openPdfFromHeader = function(filepath) {
   window.open(getPdfViewerUrl(filepath), '_blank');
 }
@@ -175,7 +182,6 @@ function buildTree(paths) {
   return tree;
 }
 
-// हेडर रेन्डर (अब <a> ट्यागको सट्टा जाभास्क्रिप्टले खोल्ने)
 function renderTree(tree, level = 0) {
   let html = '';
   let keys = Object.keys(tree).filter(k => k !== '_isFile' && k !== '_path');
@@ -197,7 +203,6 @@ function renderTree(tree, level = 0) {
         html += `<div class="sub-dropdown">${renderTree(node, level + 1)}</div>`;
         html += `</div>`;
       } else if (isFile) {
-        // हेडरमा क्लिक गर्दा सिधै openPdfFromHeader चल्ने
         const safePath = node._path.replace(/'/g, "\\'");
         html += `<a href="javascript:void(0)" onclick="openPdfFromHeader('${safePath}')" class="dropdown-item">📄 ${esc(displayName)}</a>`;
       }
@@ -250,7 +255,6 @@ function updatePdfSelect() {
   toggleViewBtn();
 }
 
-// दुवै बटन (पढ्ने र डाउनलोड) देखाउने/लुकाउने
 function toggleViewBtn() {
   const val = $('#searchPdfSelect').value;
   if (val) {
@@ -262,13 +266,11 @@ function toggleViewBtn() {
   }
 }
 
-// PDF पढ्ने बटनको फंक्शन
 function viewSelectedPdf() {
   const val = $('#searchPdfSelect').value;
   if (val) window.open(getPdfViewerUrl(val), '_blank');
 }
 
-// PDF डाउनलोड गर्ने बटनको फंक्शन
 function downloadSelectedPdf() {
   const val = $('#searchPdfSelect').value;
   if (val) window.open(getDownloadUrl(val), '_blank');
@@ -288,27 +290,66 @@ function addSearchInput(containerId, inputClass) {
 }
 
 async function doSearch(type) {
-  let queries = [], mode = "", target = "", targets = [];
+  let payload = { mode: type };
+  
   if (type === 'specific') {
-    queries = Array.from(document.querySelectorAll('.pdf-query')).map(i => i.value.trim()).filter(v => v);
-    mode = 'specific';
-    target = $('#searchPdfSelect').value;
-    if (!target) return alert('कृपया सूचीबाट एउटा PDF छान्नुहोस्');
+    const dhara = $('#input-dhara').value.trim();
+    const dafa = $('#input-dafa').value.trim();
+    const niyam = $('#input-niyam').value.trim();
+    const nirdeshan = $('#input-nirdeshan').value.trim();
+    const anusuchi = $('#input-anusuchi').value.trim();
+    const general = $('#input-general').value.trim();
+    
+    if (!dhara && !dafa && !niyam && !nirdeshan && !anusuchi && !general) {
+        return alert('कृपया कुनै एउटा बक्समा खोज्ने शब्द वा नम्बर लेख्नुहोस्');
+    }
+    
+    payload.dhara = dhara;
+    payload.dafa = dafa;
+    payload.niyam = niyam;
+    payload.nirdeshan = nirdeshan;
+    payload.anusuchi = anusuchi;
+    payload.general = general;
+    payload.target = $('#searchPdfSelect').value;
+    
+    if (!payload.target) return alert('कृपया सूचीबाट एउटा PDF छान्नुहोस्');
+    
   } else {
-    queries = Array.from(document.querySelectorAll('.folder-query')).map(i => i.value.trim()).filter(v => v);
-    targets = Array.from(document.querySelectorAll('.folder-checkbox:checked')).map(cb => cb.value);
-    mode = targets.length === 0 ? 'all' : 'folder';
+    const queries = Array.from(document.querySelectorAll('.folder-query')).map(i => i.value.trim()).filter(v => v);
+    const targets = Array.from(document.querySelectorAll('.folder-checkbox:checked')).map(cb => cb.value);
+    
+    if (!queries.length) return alert('खोज्नको लागि कम्तिमा एउटा शब्द लेख्नुहोस्');
+    
+    payload.queries = queries;
+    payload.targets = targets;
+    if (targets.length === 0) {
+        payload.mode = 'all';
+    }
   }
-  if (!queries.length) return alert('खोज्नको लागि कम्तिमा एउटा शब्द लेख्नुहोस्');
   
   $('#resultsWrap').innerHTML = '<div class="empty">खोजिँदै...</div>';
   const r = await fetch('/search', {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ queries, mode, target, targets })
+    body: JSON.stringify(payload)
   });
   const d = await r.json();
   if (d.error) return alert(d.error);
-  renderResults(d.results, queries.join(' + '));
+  
+  let queryDisplay = "";
+  if (type === 'specific') {
+      const parts = [];
+      if (payload.dhara) parts.push(`धारा ${payload.dhara}`);
+      if (payload.dafa) parts.push(`दफा ${payload.dafa}`);
+      if (payload.niyam) parts.push(`नियम ${payload.niyam}`);
+      if (payload.nirdeshan) parts.push(`निर्देशन ${payload.nirdeshan}`);
+      if (payload.anusuchi) parts.push(`अनुसूची ${payload.anusuchi}`);
+      if (payload.general) parts.push(payload.general);
+      queryDisplay = parts.join(' / ');
+  } else {
+      queryDisplay = payload.queries.join(' + ');
+  }
+  
+  renderResults(d.results, queryDisplay);
 }
 
 function renderResults(results, query) {
