@@ -136,7 +136,9 @@ def check_api_key():
     if not raw_api_key:
         return jsonify({"valid": False, "error": "API Key खाली छ"}), 400
         
-    models_to_test = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-3.8-flash"]
+    # Key जाँच्नको लागि सबैभन्दा स्थिर मोडेलहरू
+    models_to_test = ["gemini-1.5-flash", "gemini-1.5-pro"]
+    exact_error = "API Key अमान्य छ वा कुनै पनि मोडेल उपलब्ध छैन"
     
     for model in models_to_test:
         try:
@@ -145,13 +147,17 @@ def check_api_key():
             
             if r.status_code == 200:
                 return jsonify({"valid": True})
-            elif r.status_code in [400, 403]:
-                err_msg = r.json().get("error", {}).get("message", "Invalid API Key")
-                return jsonify({"valid": False, "error": err_msg}), r.status_code
-        except Exception:
-            pass
+            else:
+                # गुगलबाट आएको असली एरर सन्देश निकाल्ने
+                try:
+                    err_data = r.json()
+                    exact_error = err_data.get("error", {}).get("message", exact_error)
+                except:
+                    pass
+        except Exception as e:
+            exact_error = f"नेटवर्क एरर: {str(e)}"
             
-    return jsonify({"valid": False, "error": "API Key अमान्य छ वा कुनै पनि मोडेल उपलब्ध छैन"}), 400
+    return jsonify({"valid": False, "error": exact_error}), 400
 
 @app.route("/search", methods=["POST"])
 def search():
