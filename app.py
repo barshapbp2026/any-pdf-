@@ -1,8 +1,6 @@
 import os
 import re
 import requests
-import pytesseract
-from PIL import Image
 from flask import Flask, render_template, request, jsonify
 import fitz
 from dotenv import load_dotenv
@@ -27,66 +25,42 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         
         if q_digits:
+            # अंग्रेजी र नेपाली दुवै अंकको भेरिएसन बनाउने
             q_nep = q_digits.translate(str.maketrans("0123456789", "०१२३४५६७८९"))
             q_ascii = q_digits.translate(str.maketrans("०१२३४५६७८९", "0123456789"))
-            search_needles = [f"{q_nep}.", f"{q_ascii}.", f"{q_nep}", f"{q_ascii}"]
             
             for page_num in range(len(doc)):
-                page = doc[page_num]
-                page_text = page.get_text("text")
+                page_text = doc[page_num].get_text("text")
                 
-                found_on_page = False
-                for needle in search_needles:
-                    # page.search_for प्रयोग गर्ने (Chrome को Ctrl+F जस्तै)
-                    # flags ले स्पेस र लाइन ब्रेकको समस्या हटाउन मद्दत गर्छ
-                    rects = page.search_for(needle, flags=fitz.TEXT_PRESERVE_WHITESPACE | fitz.TEXT_DEHYPHENATE)
-                    if rects:
-                        for line in page_text.split('\n'):
-                            if needle in line:
-                                results.append({
-                                    "page": page_num + 1,
-                                    "section": f"{expected_prefix} {q_nep}",
-                                    "snippet": line.strip()[:200]
-                                })
-                                found_on_page = True
-                                break
-                    if found_on_page: break
+                # टेक्स्टबाट सबै स्पेस र नयाँ लाइन हटाएर एकै लाइन बनाउने
+                page_clean = re.sub(r'\s+', '', page_text)
                 
-                # यदि search_for ले भेटेन भने (टेक्स्ट बिग्रेको हुन सक्छ) -> OCR प्रयोग गर्ने
-                if not found_on_page:
-                    try:
-                        pix = page.get_pixmap(dpi=300)
-                        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-                        ocr_text = pytesseract.image_to_string(img, lang='nep')
-                        for line in ocr_text.split('\n'):
-                            if q_nep in line or q_ascii in line:
-                                results.append({
-                                    "page": page_num + 1,
-                                    "section": f"{expected_prefix} {q_nep} (OCR)",
-                                    "snippet": line.strip()[:200]
-                                })
-                                break
-                    except Exception as e:
-                        print(f"OCR Error: {e}")
-                        
-                if len(results) >= max_results: break
-                
-        else:
-            clean_q = query.strip()
-            for page_num in range(len(doc)):
-                page = doc[page_num]
-                # search_for प्रयोग गर्ने
-                rects = page.search_for(clean_q, flags=fitz.TEXT_PRESERVE_WHITESPACE | fitz.TEXT_DEHYPHENATE)
-                if rects:
-                    page_text = page.get_text("text")
+                # यदि '३४.' वा '34.' पेजमा कतै छ भने
+                if f"{q_nep}." in page_clean or f"{q_ascii}." in page_clean or f"{q_nep})" in page_clean or f"{q_ascii})" in page_clean:
+                    # स्निपेट (झलक) निकाल्नको लागि लाइन-बाई-लाइन खोज्ने
                     for line in page_text.split('\n'):
-                        if clean_q in line:
+                        clean_line = re.sub(r'\s+', '', line)
+                        if f"{q_nep}." in clean_line or f"{q_ascii}." in clean_line or f"{q_nep})" in clean_line or f"{q_ascii})" in clean_line:
                             results.append({
                                 "page": page_num + 1,
-                                "section": "सन्दर्भ",
+                                "section": f"{expected_prefix} {q_nep}",
                                 "snippet": line.strip()[:200]
                             })
-                            break
+                            break # यो पेजको लागि एउटा मात्र नतिजा
+                if len(results) >= max_results: break
+        else:
+            # टेक्स्ट सर्च (जस्तै: टायल चेक)
+            clean_q = re.sub(r'\s+', '', query)
+            for page_num in range(len(doc)):
+                page_text = doc[page_num].get_text("text")
+                for line in page_text.split('\n'):
+                    if clean_q in re.sub(r'\s+', '', line):
+                        results.append({
+                            "page": page_num + 1,
+                            "section": "सन्दर्भ",
+                            "snippet": line.strip()[:200]
+                        })
+                        break
                 if len(results) >= max_results: break
                 
         doc.close()
@@ -158,24 +132,6 @@ def serve_pdf(filepath):
     if pdf_data: 
         return pdf_data, 200, {'Content-Type': 'application/pdf'}
     return "PDF File not found", 404
-
-@app.route("/debug/<path:filepath>")
-def debug_pdf(filepath):
-    pdf_data = get_pdf_bytes_from_github(filepath)
-    if not pdf_data:
-        return "PDF not found", 404
-    
-    doc = fitz.open(stream=pdf_data, filetype="pdf")
-    output = [f"Total pages: {len(doc)}", f"File: {filepath}", "======================================"]
-    
-    for page_num in range(len(doc)):
-        page_text = doc[page_num].get_text("text")
-        for line in page_text.split('\n'):
-            if '३४' in line or '34' in line:
-                output.append(f"Page {page_num+1}: {repr(line[:150])}")
-    
-    doc.close()
-    return "<pre style='font-family:monospace; padding:20px; background:#f4f4f4;'>" + "\n".join(output) + "</pre>"
 
 @app.route("/check_api_key", methods=["POST"])
 def check_api_key():
