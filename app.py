@@ -12,70 +12,58 @@ app = Flask(__name__)
 GITHUB_REPO = "barshapbp2026/any-pdf-"
 GITHUB_BRANCH = "main"
 
-NEPALI_DIGITS = str.maketrans("०१२३४५६७८९", "0123456789")
-def _norm(t):
-    return t.lower().translate(NEPALI_DIGITS)
+def normalize_to_header_number(query):
+    """कुनै पनि नम्बरलाई नेपालीमा बदलेर डट थप्ने (जस्तै: 5, (5), ५ -> ५.)"""
+    if not query: return ""
+    # १. अंग्रेजी नम्बरलाई नेपालीमा बदल्ने
+    nepali_map = str.maketrans("0123456789", "०१२३४५६७८९")
+    q_nepali = query.translate(nepali_map)
+    
+    # २. अंक बाहेक सबै चिन्ह (ब्राकेट, स्पेस, डट) हटाउने
+    clean_q = re.sub(r'[^\d०-९]', '', q_nepali)
+    
+    # ३. यदि नम्बर छ भने अन्त्यमा डट (.) थप्ने
+    if clean_q:
+        return clean_q + "."
+    return query.strip() # यदि टेक्स्ट हो (जस्तै: टायल चेक) भने त्यसै फर्काउने
 
-def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
+def search_in_pdf_bytes(pdf_bytes, query, max_results=30):
     results = []
+    norm_query = normalize_to_header_number(query)
     
-    # १. फोल्डरको नाम अनुसार व्याकरण (Prefix) छुट्याउने
-    expected_prefix = "दफा"
-    context_lower = folder_context.lower()
-    if "संविधान" in context_lower:
-        expected_prefix = "धारा"
-    elif "निर्देशिका" in context_lower:
-        expected_prefix = "निर्देशन"
-    elif "नियम" in context_lower:
-        expected_prefix = "नियम"
-        
-    # २. नम्बर हो कि टेक्स्ट हो छुट्याउने
-    clean_q = re.sub(r'[^\d०-९]', '', query.strip())
-    is_number_query = bool(clean_q) and len(clean_q) > 0
-    
-    clean_q_norm = _norm(clean_q) if is_number_query else ""
-    q_text_norm = _norm(query.strip()).replace(" ", "")
+    # जाँच्ने: यो नम्बर सर्च हो कि टेक्स्ट सर्च
+    is_num_search = norm_query.endswith(".") and any(c in "०१२३४५६७८९" for c in norm_query)
+    clean_q_text = re.sub(r'\s+', '', query) # टेक्स्ट भए स्पेस हटाउने
 
     try:
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        
         for page_num in range(len(doc)):
             page_text = doc[page_num].get_text("text")
             lines = page_text.split('\n')
             
             for line in lines:
-                line = line.strip()
-                if not line: 
-                    continue
-
-                if is_number_query:
-                    clean_line = _norm(line).replace(" ", "")
-                    # सिधा स्ट्रिङ चेक गर्ने (Regex एरर आउने डर छैन)
-                    str_dot = clean_q_norm + "."
-                    str_bracket = "(" + clean_q_norm + ")"
-                    str_bracket2 = clean_q_norm + ")"
-                    
-                    if clean_line.startswith(str_dot) or clean_line.startswith(str_bracket) or clean_line.startswith(str_bracket2):
-                        snippet = line[:150] + "..." if len(line) > 150 else line
+                clean_line = line.strip()
+                if not clean_line: continue
+                
+                if is_num_search:
+                    # यदि PDF मा '५.' वा '३४.' बाट लाइन सुरु हुन्छ भने
+                    if clean_line.startswith(norm_query):
                         results.append({
-                            "page": page_num + 1, 
-                            "section": expected_prefix + " " + clean_q, 
-                            "snippet": snippet
+                            "page": page_num + 1,
+                            "section": norm_query,
+                            "snippet": clean_line[:150]
                         })
                 else:
-                    clean_line = _norm(line).replace(" ", "")
-                    if q_text_norm in clean_line:
-                        snippet = line[:150] + "..." if len(line) > 150 else line
+                    # टेक्स्ट सर्च (जस्तै: टायल चेक) -> स्पेस हटाएर खोज्ने
+                    if clean_q_text in re.sub(r'\s+', '', clean_line):
                         results.append({
-                            "page": page_num + 1, 
-                            "section": "सन्दर्भ", 
-                            "snippet": snippet
+                            "page": page_num + 1,
+                            "section": "हेडर (सन्दर्भ)",
+                            "snippet": clean_line[:150]
                         })
-
-                if len(results) >= max_results: 
-                    break
-            if len(results) >= max_results: 
-                break
+                        
+                if len(results) >= max_results: break
+            if len(results) >= max_results: break
         doc.close()
     except Exception as e:
         print(f"[search_in_pdf] Error: {e}")
@@ -87,32 +75,12 @@ def get_github_pdfs():
         res = requests.get(tree_url, timeout=10)
         if res.status_code == 200:
             data = res.json()
-            if data.get("truncated"):
-                return _fetch_all_pdfs_fallback()
             pdfs = [item["path"].replace("pdfs/", "", 1) for item in data.get("tree", []) 
                     if item["type"] == "blob" and item["path"].startswith("pdfs/") and item["path"].lower().endswith(".pdf")]
             return sorted(pdfs)
     except Exception as e:
         print(f"Tree API error: {e}")
-    return _fetch_all_pdfs_fallback()
-
-def _fetch_all_pdfs_fallback():
-    pdfs = []
-    def walk(path=""):
-        url = "https://api.github.com/repos/" + GITHUB_REPO + "/contents/" + path + "?ref=" + GITHUB_BRANCH
-        try:
-            res = requests.get(url, timeout=10)
-            if res.status_code != 200: 
-                return
-            for item in res.json():
-                if item["type"] == "dir":
-                    walk(item["path"])
-                elif item["type"] == "file" and item["path"].startswith("pdfs/") and item["path"].lower().endswith(".pdf"):
-                    pdfs.append(item["path"].replace("pdfs/", "", 1))
-        except Exception: 
-            pass
-    walk("pdfs")
-    return sorted(pdfs)
+    return []
 
 def get_pdf_bytes_from_github(filepath):
     encoded_path = "/".join(requests.utils.quote(part) for part in ("pdfs/" + filepath).split("/"))
@@ -125,27 +93,27 @@ def get_pdf_bytes_from_github(filepath):
         pass
     return None
 
-def collect_results(queries, filepaths=None, folders=None):
+def collect_results(queries, mode="all", target="", targets=[]):
     all_files = get_github_pdfs()
-    if filepaths:
-        files_to_search = filepaths
-    elif folders:
-        files_to_search = [f for f in all_files if any(f.startswith(folder + "/") or f == folder for folder in folders)]
+    
+    # STRICT SCOPING LOGIC
+    if mode == "specific" and target:
+        files_to_search = [target] # केवल छानिएको PDF
+    elif mode in ["folder", "folders"] and targets:
+        # केवल छानिएका फोल्डर भित्रका PDF हरू
+        files_to_search = [f for f in all_files if any(f.startswith(t + "/") or f == t for t in targets)]
     else:
-        files_to_search = all_files
+        files_to_search = all_files # सबै PDF (यदि mode all छ भने)
 
     out = []
     for f in files_to_search:
         try:
             pdf_data = get_pdf_bytes_from_github(f)
-            folder_context = f.split('/')[0] if '/' in f else ""
-            
             if pdf_data:
                 for q in queries:
-                    matches = search_in_pdf_bytes(pdf_data, q, folder_context)
+                    matches = search_in_pdf_bytes(pdf_data, q)
                     if matches:
-                        if not any(x['filename'] == f and x['matches'] == matches for x in out):
-                            out.append({"filename": f, "matches": matches, "query": q})
+                        out.append({"filename": f, "matches": matches, "query": q})
         except Exception: 
             pass
     return out
@@ -171,20 +139,15 @@ def check_api_key():
     raw_api_key = (data.get("api_key") or "").strip()
     if raw_api_key.startswith("GEMINI_API_KEY="):
         raw_api_key = raw_api_key.split("=", 1)[1].strip()
-        
     if not raw_api_key:
         return jsonify({"valid": False, "error": "API Key खाली छ"}), 400
-        
     try:
         url = "https://generativelanguage.googleapis.com/v1beta/models?key=" + raw_api_key
         r = requests.get(url, timeout=10)
         if r.status_code == 200:
             return jsonify({"valid": True})
         else:
-            try:
-                exact_error = r.json().get("error", {}).get("message", "API Key अमान्य छ")
-            except:
-                exact_error = "HTTP " + str(r.status_code) + " एरर"
+            exact_error = r.json().get("error", {}).get("message", "API Key अमान्य छ")
             return jsonify({"valid": False, "error": exact_error}), 400
     except Exception as e:
         return jsonify({"valid": False, "error": "नेटवर्क एरर: " + str(e)}), 400
@@ -195,7 +158,6 @@ def search():
     mode = data.get("mode", "all")
     target = data.get("target", "")
     targets = data.get("targets", [])
-    queries = data.get("queries", [])
     
     dhara = (data.get("dhara") or "").strip()
     dafa = (data.get("dafa") or "").strip()
@@ -203,31 +165,19 @@ def search():
     nirdeshan = (data.get("nirdeshan") or "").strip()
     anusuchi = (data.get("anusuchi") or "").strip()
     general = (data.get("general") or "").strip()
+    queries = data.get("queries", [])
     
-    specific_nums = []
-    if dhara: specific_nums.append(dhara)
-    if dafa: specific_nums.append(dafa)
-    if niyam: specific_nums.append(niyam)
-    if nirdeshan: specific_nums.append(nirdeshan)
-    if anusuchi: specific_nums.append(anusuchi)
-
     final_queries = []
-    for num in specific_nums:
-        final_queries.append(num)
-
-    if general:
-        final_queries.append(general)
+    for q in [dhara, dafa, niyam, nirdeshan, anusuchi, general]:
+        if q: final_queries.append(q)
     if queries:
         final_queries.extend(queries)
         
-    final_queries = list(set([q for q in final_queries if q.strip()]))
-    
+    final_queries = list(set(final_queries))
     if not final_queries:
         return jsonify({"error": "खोज शब्द खाली छ।"}), 400
         
-    filepath = target if mode == "specific" else None
-    folders = targets if mode in ["folder", "folders"] else None
-    results = collect_results(final_queries, filepaths=filepath, folders=folders)
+    results = collect_results(final_queries, mode, target, targets)
     return jsonify({"results": results})
 
 @app.route("/chat", methods=["POST"])
@@ -256,15 +206,13 @@ def chat():
     targets = data.get("targets", [])
     query_str = " AND ".join(queries)
     
-    filepath = target if mode == "specific" else None
-    folders = targets if mode in ["folder", "folders"] else None
-    results = collect_results(queries, filepaths=filepath, folders=folders)
+    # Strict Scoping for Chat
+    results = collect_results(queries, mode, target, targets)
     
     ctx_lines = []
     for g in results[:5]:
         for m in g["matches"][:6]:
-            sec = m["section"] or "सन्दर्भ अज्ञात"
-            ctx_lines.append("[PDF: " + g['filename'] + " | पृष्ठ " + str(m['page']) + " | " + sec + "] " + m['snippet'])
+            ctx_lines.append("[PDF: " + g['filename'] + " | पृष्ठ " + str(m['page']) + " | " + str(m['section']) + "] " + m['snippet'])
     context_str = "\n".join(ctx_lines) if ctx_lines else "कुनै मिल्दो सामग्री भेटिएन।"
     
     prompt = (
