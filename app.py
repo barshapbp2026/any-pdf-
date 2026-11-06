@@ -20,28 +20,40 @@ SECTION_RE = re.compile(r"((?:धारा|दफा|नियम|उपनि�
 
 def search_in_pdf_bytes(pdf_bytes, query, max_results=30):
     results = []
-    q_norm = _norm(query.strip())
+    # खोज्ने शब्दबाट सबै स्पेस हटाउने (जसले गर्दा "टायल चेक" र "टायल चेक" एउटै होस्)
+    q_norm = _norm(query.strip()).replace(" ", "")
     if not q_norm: return results
+    
     try:
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         carried_section = None
         for page_num in range(len(doc)):
             page_text = doc[page_num].get_text("text")
-            page_norm = _norm(page_text)
-            section_positions = [(m.start(), m.group()) for m in SECTION_RE.finditer(page_norm)]
+            
+            # PDF को टेक्स्टबाट पनि सबै स्पेस र नयाँ लाइन हटाउने
+            page_norm_clean = _norm(page_text).replace(" ", "").replace("\n", "").replace("\r", "")
+            
+            # पेजमा भएका धारा/दफा पत्ता लगाउने
+            section_positions = [(m.start(), m.group()) for m in SECTION_RE.finditer(_norm(page_text))]
+            
             idx = 0
             while True:
-                pos = page_norm.find(q_norm, idx)
+                pos = page_norm_clean.find(q_norm, idx)
                 if pos == -1: break
+                
+                # स्निपेट (झलक) निकाल्नको लागि नजिकैको टेक्स्ट हेर्ने
+                start = max(0, pos - 30)
+                end = min(len(page_norm_clean), pos + len(q_norm) + 80)
+                snippet = page_norm_clean[start:end]
+                
                 section = carried_section
                 for sp, sname in section_positions:
                     if sp <= pos: section = sname
-                start = max(0, pos - 80)
-                end = min(len(page_text), pos + len(query) + 140)
-                snippet = page_text[start:end].replace("\n", " ").strip()
-                results.append({"page": page_num + 1, "section": section, "snippet": snippet})
+                        
+                results.append({"page": page_num + 1, "section": section, "snippet": "..." + snippet + "..."})
                 idx = pos + 1
                 if len(results) >= max_results: break
+                
             if section_positions: carried_section = section_positions[-1][1]
             if len(results) >= max_results: break
         doc.close()
@@ -229,7 +241,6 @@ def chat():
     
     last_error = ""
     for api_key in keys_to_try:
-        # गुगलसँग यो Key ले कुन-कुन मोडेल चलाउँछ सोध्ने (Dynamic)
         try:
             list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
             list_res = requests.get(list_url, timeout=10)
@@ -238,10 +249,9 @@ def chat():
                 continue
                 
             models_data = list_res.json().get("models", [])
-            # generateContent सपोर्ट गर्ने मोडेलहरू मात्र छान्ने
             available_models = [m["name"].replace("models/", "") for m in models_data if "generateContent" in m.get("supportedGenerationMethods", [])]
             
-            # राम्रो मोडेल पहिले प्रयोग गर्न क्रम मिलाउने (Flash पहिले, Pro पछि)
+            # राम्रो मोडेल पहिले प्रयोग गर्न क्रम मिलाउने
             available_models.sort(key=lambda x: (0 if 'flash' in x else 1, x))
             
             for model in available_models:
