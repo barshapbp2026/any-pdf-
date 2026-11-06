@@ -137,7 +137,6 @@ def check_api_key():
         return jsonify({"valid": False, "error": "API Key खाली छ"}), 400
         
     try:
-        # मोडेल प्रयोग नगरी सिधै Key जाँच्ने (List Models API)
         url = f"https://generativelanguage.googleapis.com/v1beta/models?key={raw_api_key}"
         r = requests.get(url, timeout=10)
         
@@ -232,11 +231,11 @@ def chat():
         f"PDF सामग्री:\n{context_str}\n\nप्रश्न: {query_str}\n"
     )
     
-            models_to_try = [
-            "gemini-1.5-flash",
-            "gemini-2.0-flash",
-            "gemini-1.5-pro"
-        ]
+    models_to_try = [
+        "gemini-1.5-flash",
+        "gemini-2.0-flash",
+        "gemini-1.5-pro"
+    ]
     
     last_error = ""
     for api_key in keys_to_try:
