@@ -6,34 +6,24 @@ import fitz
 from dotenv import load_dotenv
 
 load_dotenv() 
-
 app = Flask(__name__)
 
 GITHUB_REPO = "barshapbp2026/any-pdf-"
 GITHUB_BRANCH = "main"
 
-def normalize_to_header_number(query):
-    """कुनै पनि नम्बरलाई नेपालीमा बदलेर डट थप्ने (जस्तै: 5, (5), ५ -> ५.)"""
+def normalize_to_nepali_number(query):
+    """कुनै पनि नम्बरलाई नेपालीमा बदल्ने (जस्तै: 34 -> ३४)"""
     if not query: return ""
-    # १. अंग्रेजी नम्बरलाई नेपालीमा बदल्ने
     nepali_map = str.maketrans("0123456789", "०१२३४५६७८९")
     q_nepali = query.translate(nepali_map)
-    
-    # २. अंक बाहेक सबै चिन्ह (ब्राकेट, स्पेस, डट) हटाउने
     clean_q = re.sub(r'[^\d०-९]', '', q_nepali)
-    
-    # ३. यदि नम्बर छ भने अन्त्यमा डट (.) थप्ने
-    if clean_q:
-        return clean_q + "."
-    return query.strip() # यदि टेक्स्ट हो (जस्तै: टायल चेक) भने त्यसै फर्काउने
+    return clean_q
 
 def search_in_pdf_bytes(pdf_bytes, query, max_results=30):
     results = []
-    norm_query = normalize_to_header_number(query)
-    
-    # जाँच्ने: यो नम्बर सर्च हो कि टेक्स्ट सर्च
-    is_num_search = norm_query.endswith(".") and any(c in "०१२३४५६७८९" for c in norm_query)
-    clean_q_text = re.sub(r'\s+', '', query) # टेक्स्ट भए स्पेस हटाउने
+    norm_q = normalize_to_nepali_number(query)
+    is_num_search = bool(norm_q) and len(norm_q) > 0
+    clean_q_text = re.sub(r'\s+', '', query)
 
     try:
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
@@ -45,28 +35,24 @@ def search_in_pdf_bytes(pdf_bytes, query, max_results=30):
                 clean_line = line.strip()
                 if not clean_line: continue
                 
+                # PDF को टेक्स्टलाई पनि नेपालीमा बदलेर चेक गर्ने
+                nepali_line = clean_line.translate(str.maketrans("0123456789", "०१२३४५६७८९"))
+                clean_np_line = re.sub(r'\s+', '', nepali_line)
+
                 if is_num_search:
-                    # यदि PDF मा '५.' वा '३४.' बाट लाइन सुरु हुन्छ भने
-                    if clean_line.startswith(norm_query):
-                        results.append({
-                            "page": page_num + 1,
-                            "section": norm_query,
-                            "snippet": clean_line[:150]
-                        })
+                    # ३४. वा (३४) वा ३४) बाट सुरु हुन्छ कि
+                    if clean_np_line.startswith(norm_q + ".") or clean_np_line.startswith("(" + norm_q + ")") or clean_np_line.startswith(norm_q + ")"):
+                        results.append({"page": page_num + 1, "section": f"नम्बर {norm_q}", "snippet": clean_line[:150]})
                 else:
-                    # टेक्स्ट सर्च (जस्तै: टायल चेक) -> स्पेस हटाएर खोज्ने
-                    if clean_q_text in re.sub(r'\s+', '', clean_line):
-                        results.append({
-                            "page": page_num + 1,
-                            "section": "हेडर (सन्दर्भ)",
-                            "snippet": clean_line[:150]
-                        })
+                    # टेक्स्ट सर्च (जस्तै: टायल चेक)
+                    if clean_q_text in clean_np_line:
+                        results.append({"page": page_num + 1, "section": "हेडर (सन्दर्भ)", "snippet": clean_line[:150]})
                         
                 if len(results) >= max_results: break
             if len(results) >= max_results: break
         doc.close()
     except Exception as e:
-        print(f"[search_in_pdf] Error: {e}")
+        print(f"Error: {e}")
     return results
 
 def get_github_pdfs():
@@ -100,10 +86,9 @@ def collect_results(queries, mode="all", target="", targets=[]):
     if mode == "specific" and target:
         files_to_search = [target] # केवल छानिएको PDF
     elif mode in ["folder", "folders"] and targets:
-        # केवल छानिएका फोल्डर भित्रका PDF हरू
         files_to_search = [f for f in all_files if any(f.startswith(t + "/") or f == t for t in targets)]
     else:
-        files_to_search = all_files # सबै PDF (यदि mode all छ भने)
+        files_to_search = all_files # सबै PDF
 
     out = []
     for f in files_to_search:
@@ -131,7 +116,7 @@ def serve_pdf(filepath):
     pdf_data = get_pdf_bytes_from_github(filepath)
     if pdf_data: 
         return pdf_data, 200, {'Content-Type': 'application/pdf'}
-    return "PDF File not found on GitHub", 404
+    return "PDF File not found", 404
 
 @app.route("/check_api_key", methods=["POST"])
 def check_api_key():
@@ -206,7 +191,6 @@ def chat():
     targets = data.get("targets", [])
     query_str = " AND ".join(queries)
     
-    # Strict Scoping for Chat
     results = collect_results(queries, mode, target, targets)
     
     ctx_lines = []

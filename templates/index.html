@@ -107,7 +107,7 @@
             <input type="text" id="input-niyam" placeholder="नियम (जस्तै: ३)">
             <input type="text" id="input-nirdeshan" placeholder="निर्देशन">
             <input type="text" id="input-anusuchi" placeholder="अनुसूची">
-            <input type="text" id="input-general" placeholder="अन्य शब्द (जस्तै: टायल)">
+            <input type="text" id="input-general" placeholder="हेडर भित्रको शब्द (जस्तै: टायल)">
         </div>
 
         <button onclick="doSearch('specific')" style="width:100%; margin-top:10px;">PDF भित्र खोज्नुहोस्</button>
@@ -128,22 +128,20 @@
     </div>
   </div>
 
-  <!-- च्याट सेक्सन (स्कोप छान्ने अप्सन सहित) -->
   <div class="card">
     <h2>💬 PDF सँग प्रश्न सोध्नुहोस्</h2>
-    
     <div class="row" style="margin-bottom: 10px;">
       <select id="chatScope" onchange="updateChatScope()" style="flex:1;">
         <option value="all">🌐 सबै PDF हरूमा खोज्नुहोस्</option>
-        <option value="folder">📁 निश्चित फोल्डर भित्र खोज्नुहोस्</option>
+        <option value="folders">📁 निश्चित फोल्डरहरू भित्र खोज्नुहोस् (Multiple)</option>
         <option value="specific">📄 निश्चित PDF भित्र खोज्नुहोस्</option>
       </select>
     </div>
 
-    <!-- फोल्डर वा PDF छान्ने ड्रपडाउन (Default मा लुकेको) -->
+    <div id="chatFoldersContainer" style="display:none; margin-bottom:10px; border:1px solid #d1d5db; border-radius:6px; padding:8px; max-height:150px; overflow-y:auto; background:#fff;"></div>
+
     <div class="row" id="chatTargetRow" style="display:none; margin-bottom: 10px;">
-        <select id="chatFolderSelect" style="flex:1; display:none;" onchange="updateChatPdfSelect()"></select>
-        <select id="chatPdfSelect" style="flex:1; display:none;"></select>
+        <select id="chatPdfSelect" style="flex:1;"></select>
     </div>
 
     <div class="row">
@@ -253,46 +251,41 @@ async function loadPdfs() {
   
   allFolders = Array.from(folderSet).sort((a, b) => a.localeCompare(b, 'ne', { numeric: true }));
   
-  // सर्चको लागि
   let folderSelectHtml = '<option value="">— पहिले फोल्डर छान्नुहोस् —</option>';
   allFolders.forEach(f => folderSelectHtml += `<option value="${esc(f)}">📁 ${esc(f)}</option>`);
   $('#searchFolderSelect').innerHTML = folderSelectHtml;
-  
-  // च्याटको लागि
-  let chatFolderHtml = '<option value="">— फोल्डर छान्नुहोस् —</option>';
-  allFolders.forEach(f => chatFolderHtml += `<option value="${esc(f)}">📁 ${esc(f)}</option>`);
-  $('#chatFolderSelect').innerHTML = chatFolderHtml;
 
   let checkboxHtml = `<label class="select-all-row"><input type="checkbox" id="selectAllFolders" onchange="toggleAllFolders(this)"> ☑️ सबै छान्नुहोस् (Select All)</label>`;
   allFolders.forEach(f => checkboxHtml += `<label><input type="checkbox" class="folder-checkbox" value="${esc(f)}"> 📁 ${esc(f)}</label>`);
   $('#folderCheckboxes').innerHTML = checkboxHtml;
+
+  let chatCheckboxHtml = '';
+  allFolders.forEach(f => {
+    chatCheckboxHtml += `<label style="display:flex; align-items:center; gap:8px; font-size:13px; padding:4px 0; cursor:pointer; border-bottom:1px solid #f3f4f6;">
+        <input type="checkbox" class="chat-folder-checkbox" value="${esc(f)}"> 📁 ${esc(f)}
+    </label>`;
+  });
+  $('#chatFoldersContainer').innerHTML = chatCheckboxHtml;
 }
 
-// च्याट स्कोप अपडेट गर्ने
 function updateChatScope() {
     const scope = $('#chatScope').value;
-    if (scope === 'all') {
-        $('#chatTargetRow').style.display = 'none';
-    } else if (scope === 'folder') {
-        $('#chatTargetRow').style.display = 'flex';
-        $('#chatFolderSelect').style.display = 'block';
-        $('#chatPdfSelect').style.display = 'none';
+    $('#chatTargetRow').style.display = 'none';
+    $('#chatFoldersContainer').style.display = 'none';
+    
+    if (scope === 'folders') {
+        $('#chatFoldersContainer').style.display = 'block';
     } else if (scope === 'specific') {
         $('#chatTargetRow').style.display = 'flex';
-        $('#chatFolderSelect').style.display = 'block';
         $('#chatPdfSelect').style.display = 'block';
         updateChatPdfSelect();
     }
 }
 
-// च्याटको लागि PDF ड्रपडाउन अपडेट गर्ने
 function updateChatPdfSelect() {
-    const selectedFolder = $('#chatFolderSelect').value;
     const pdfSelect = $('#chatPdfSelect');
-    if (!selectedFolder) { pdfSelect.innerHTML = '<option value="">— PDF छान्नुहोस् —</option>'; return; }
-    const filesInFolder = allFiles.filter(f => f.startsWith(selectedFolder + '/'));
     let html = '<option value="">— PDF छान्नुहोस् —</option>';
-    filesInFolder.forEach(f => html += `<option value="${esc(f)}">📄 ${esc(cleanName(f))}</option>`);
+    allFiles.forEach(f => html += `<option value="${esc(f)}">📄 ${esc(cleanName(f))}</option>`);
     pdfSelect.innerHTML = html;
 }
 
@@ -341,6 +334,24 @@ function addSearchInput(containerId, inputClass) {
   container.appendChild(div);
 }
 
+async function checkApiKey() {
+    const key = document.getElementById('apiKey').value.trim();
+    const statusSpan = document.getElementById('apiKeyStatus');
+    if (!key) { statusSpan.innerText = "❌ Key खाली छ"; statusSpan.style.color = "#ef4444"; return; }
+    statusSpan.innerText = "⏳ जाँच हुँदै..."; statusSpan.style.color = "#f59e0b";
+    try {
+        const r = await fetch('/check_api_key', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({api_key: key})
+        });
+        const d = await r.json();
+        if (d.valid) { statusSpan.innerText = "✅ Valid"; statusSpan.style.color = "#10b981"; }
+        else { statusSpan.innerText = "❌ Invalid: " + (d.error || "अज्ञात कारण"); statusSpan.style.color = "#ef4444"; }
+    } catch (e) {
+        statusSpan.innerText = "❌ नेटवर्क एरर"; statusSpan.style.color = "#ef4444";
+    }
+}
+
 async function doSearch(type) {
   let payload = { mode: type };
   
@@ -355,28 +366,18 @@ async function doSearch(type) {
     if (!dhara && !dafa && !niyam && !nirdeshan && !anusuchi && !general) {
         return alert('कृपया कुनै एउटा बक्समा खोज्ने शब्द वा नम्बर लेख्नुहोस्');
     }
-    
-    payload.dhara = dhara;
-    payload.dafa = dafa;
-    payload.niyam = niyam;
-    payload.nirdeshan = nirdeshan;
-    payload.anusuchi = anusuchi;
-    payload.general = general;
+    payload.dhara = dhara; payload.dafa = dafa; payload.niyam = niyam;
+    payload.nirdeshan = nirdeshan; payload.anusuchi = anusuchi; payload.general = general;
     payload.target = $('#searchPdfSelect').value;
-    
     if (!payload.target) return alert('कृपया सूचीबाट एउटा PDF छान्नुहोस्');
     
   } else {
     const queries = Array.from(document.querySelectorAll('.folder-query')).map(i => i.value.trim()).filter(v => v);
     const targets = Array.from(document.querySelectorAll('.folder-checkbox:checked')).map(cb => cb.value);
-    
     if (!queries.length) return alert('खोज्नको लागि कम्तिमा एउटा शब्द लेख्नुहोस्');
-    
     payload.queries = queries;
     payload.targets = targets;
-    if (targets.length === 0) {
-        payload.mode = 'all';
-    }
+    if (targets.length === 0) payload.mode = 'all';
   }
   
   $('#resultsWrap').innerHTML = '<div class="empty">खोजिँदै...</div>';
@@ -407,8 +408,7 @@ async function doSearch(type) {
 function renderResults(results, query) {
   const wrap = $('#resultsWrap');
   if (!results || !results.length) { 
-      wrap.innerHTML = `<div class="empty">"${esc(query)}" का लागि कुनै नतिजा भेटिएन।</div>`; 
-      return; 
+      wrap.innerHTML = `<div class="empty">"${esc(query)}" का लागि कुनै नतिजा भेटिएन।</div>`; return; 
   }
   let html = '';
   results.forEach(g => {
@@ -428,13 +428,11 @@ $('#chatBtn').onclick = async () => {
   
   const api_key = $('#apiKey').value.trim();
   const mode = $('#chatScope').value;
-  let target = "";
-  let targets = [];
+  let target = ""; let targets = [];
   
-  if (mode === 'folder') {
-      target = $('#chatFolderSelect').value;
-      if (!target) return alert('कृपया फोल्डर छान्नुहोस्');
-      targets = [target]; // ब्याकएन्डमा array को रूपमा पठाउने
+  if (mode === 'folders') {
+      targets = Array.from(document.querySelectorAll('.chat-folder-checkbox:checked')).map(cb => cb.value);
+      if (targets.length === 0) return alert('कृपया कम्तिमा एउटा फोल्डर छान्नुहोस्');
   } else if (mode === 'specific') {
       target = $('#chatPdfSelect').value;
       if (!target) return alert('कृपया PDF छान्नुहोस्');
@@ -450,42 +448,6 @@ $('#chatBtn').onclick = async () => {
   $('#answerWrap').innerHTML = `<div class="answer">${esc(d.answer)}</div>`;
   renderResults(d.results, query);
 };
-
-
-async function checkApiKey() {
-    const key = document.getElementById('apiKey').value.trim();
-    const statusSpan = document.getElementById('apiKeyStatus');
-    
-    if (!key) {
-        statusSpan.innerText = "❌ Key खाली छ";
-        statusSpan.style.color = "#ef4444";
-        return;
-    }
-    
-    statusSpan.innerText = "⏳ जाँच हुँदै...";
-    statusSpan.style.color = "#f59e0b";
-    
-    try {
-        const r = await fetch('/check_api_key', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({api_key: key})
-        });
-        const d = await r.json();
-        if (d.valid) {
-            statusSpan.innerText = "✅ Valid";
-            statusSpan.style.color = "#10b981";
-        } else {
-            statusSpan.innerText = "❌ Invalid: " + (d.error || "अज्ञात कारण");
-            statusSpan.style.color = "#ef4444";
-        }
-    } catch (e) {
-        statusSpan.innerText = "❌ नेटवर्क एरर";
-        statusSpan.style.color = "#ef4444";
-    }
-}
-
-// यसलाई loadPdfs() भन्दा अगाडि राख्ने
 
 loadPdfs();
 </script>
