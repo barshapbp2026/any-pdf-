@@ -22,15 +22,14 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
     # १. फोल्डरको नाम अनुसार व्याकरण (Prefix) छुट्याउने
     expected_prefix = "दफा"
     context_lower = folder_context.lower()
-    if "संविधान" in context_lower or "sambidhan" in context_lower:
+    if "संविधान" in context_lower:
         expected_prefix = "धारा"
-    elif "निर्देशिका" in context_lower or "nirdeshika" in context_lower:
+    elif "निर्देशिका" in context_lower:
         expected_prefix = "निर्देशन"
-    elif "नियम" in context_lower or "niyam" in context_lower:
+    elif "नियम" in context_lower:
         expected_prefix = "नियम"
         
-    # २. प्रयोगकर्ताले नम्बर हालेको हो कि टेक्स्ट हालेको हो छुट्याउने
-    # (५, 5, (५), 5. सबैलाई 5 मा बदल्ने)
+    # २. नम्बर हो कि टेक्स्ट हो छुट्याउने
     clean_q = re.sub(r'[^\d०-९]', '', query.strip())
     is_number_query = bool(clean_q) and len(clean_q) > 0
     
@@ -40,47 +39,50 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
     try:
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         
-        # ३. हेडर (१., २., ३. ... १००.) पहिचान गर्ने Regex
-        # (लाइनको सुरुमा नम्बर र त्यसपछि डट वा ब्राकेट भएको)
-        header_regex = re.compile(r"(?m)^[ \t]*([०-९]+|\d+)[ \t]*[\.\)][ \t]*(.*)")
-        
         for page_num in range(len(doc)):
             page_text = doc[page_num].get_text("text")
+            lines = page_text.split('\n')
             
-            for match in header_regex.finditer(page_text):
-                num_raw = match.group(1)
-                header_text = match.group(2).strip()
-                
-                num_norm = _norm(num_raw)
-                header_text_norm = _norm(header_text).replace(" ", "")
-                
-                match_found = False
-                section_display = f"{expected_prefix} {num_raw}"
-                
+            for line in lines:
+                line = line.strip()
+                if not line: 
+                    continue
+
                 if is_number_query:
-                    # यदि नम्बर खोजेको हो भने (जस्तै: 5 == ५)
-                    if clean_q_norm == num_norm:
-                        match_found = True
-                else:
-                    # यदि टेक्स्ट खोजेको हो भने (जस्तै: टायल चेक)
-                    if q_text_norm in header_text_norm:
-                        match_found = True
-                        
-                if match_found:
-                    snippet = f"{num_raw}. {header_text}"
-                    if len(snippet) > 150:
-                        snippet = snippet[:150] + "..."
-                    results.append({"page": page_num + 1, "section": section_display, "snippet": snippet})
+                    clean_line = _norm(line).replace(" ", "")
+                    # सिधा स्ट्रिङ चेक गर्ने (Regex एरर आउने डर छैन)
+                    str_dot = clean_q_norm + "."
+                    str_bracket = "(" + clean_q_norm + ")"
+                    str_bracket2 = clean_q_norm + ")"
                     
-                if len(results) >= max_results: break
-            if len(results) >= max_results: break
+                    if clean_line.startswith(str_dot) or clean_line.startswith(str_bracket) or clean_line.startswith(str_bracket2):
+                        snippet = line[:150] + "..." if len(line) > 150 else line
+                        results.append({
+                            "page": page_num + 1, 
+                            "section": expected_prefix + " " + clean_q, 
+                            "snippet": snippet
+                        })
+                else:
+                    clean_line = _norm(line).replace(" ", "")
+                    if q_text_norm in clean_line:
+                        snippet = line[:150] + "..." if len(line) > 150 else line
+                        results.append({
+                            "page": page_num + 1, 
+                            "section": "सन्दर्भ", 
+                            "snippet": snippet
+                        })
+
+                if len(results) >= max_results: 
+                    break
+            if len(results) >= max_results: 
+                break
         doc.close()
     except Exception as e:
         print(f"[search_in_pdf] Error: {e}")
     return results
 
 def get_github_pdfs():
-    tree_url = f"https://api.github.com/repos/{GITHUB_REPO}/git/trees/{GITHUB_BRANCH}?recursive=1"
+    tree_url = "https://api.github.com/repos/" + GITHUB_REPO + "/git/trees/" + GITHUB_BRANCH + "?recursive=1"
     try:
         res = requests.get(tree_url, timeout=10)
         if res.status_code == 200:
@@ -97,26 +99,30 @@ def get_github_pdfs():
 def _fetch_all_pdfs_fallback():
     pdfs = []
     def walk(path=""):
-        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}?ref={GITHUB_BRANCH}"
+        url = "https://api.github.com/repos/" + GITHUB_REPO + "/contents/" + path + "?ref=" + GITHUB_BRANCH
         try:
             res = requests.get(url, timeout=10)
-            if res.status_code != 200: return
+            if res.status_code != 200: 
+                return
             for item in res.json():
                 if item["type"] == "dir":
                     walk(item["path"])
                 elif item["type"] == "file" and item["path"].startswith("pdfs/") and item["path"].lower().endswith(".pdf"):
                     pdfs.append(item["path"].replace("pdfs/", "", 1))
-        except Exception: pass
+        except Exception: 
+            pass
     walk("pdfs")
     return sorted(pdfs)
 
 def get_pdf_bytes_from_github(filepath):
-    encoded_path = "/".join(requests.utils.quote(part) for part in f"pdfs/{filepath}".split("/"))
-    url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{encoded_path}"
+    encoded_path = "/".join(requests.utils.quote(part) for part in ("pdfs/" + filepath).split("/"))
+    url = "https://raw.githubusercontent.com/" + GITHUB_REPO + "/" + GITHUB_BRANCH + "/" + encoded_path
     try:
         res = requests.get(url, timeout=15)
-        if res.status_code == 200: return res.content
-    except Exception: pass
+        if res.status_code == 200: 
+            return res.content
+    except Exception: 
+        pass
     return None
 
 def collect_results(queries, filepaths=None, folders=None):
@@ -132,7 +138,6 @@ def collect_results(queries, filepaths=None, folders=None):
     for f in files_to_search:
         try:
             pdf_data = get_pdf_bytes_from_github(f)
-            # फोल्डरको नाम (Context) निकाल्ने
             folder_context = f.split('/')[0] if '/' in f else ""
             
             if pdf_data:
@@ -141,7 +146,8 @@ def collect_results(queries, filepaths=None, folders=None):
                     if matches:
                         if not any(x['filename'] == f and x['matches'] == matches for x in out):
                             out.append({"filename": f, "matches": matches, "query": q})
-        except Exception: pass
+        except Exception: 
+            pass
     return out
 
 @app.route("/")
@@ -170,7 +176,7 @@ def check_api_key():
         return jsonify({"valid": False, "error": "API Key खाली छ"}), 400
         
     try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models?key={raw_api_key}"
+        url = "https://generativelanguage.googleapis.com/v1beta/models?key=" + raw_api_key
         r = requests.get(url, timeout=10)
         if r.status_code == 200:
             return jsonify({"valid": True})
@@ -178,10 +184,10 @@ def check_api_key():
             try:
                 exact_error = r.json().get("error", {}).get("message", "API Key अमान्य छ")
             except:
-                exact_error = f"HTTP {r.status_code} एरर"
+                exact_error = "HTTP " + str(r.status_code) + " एरर"
             return jsonify({"valid": False, "error": exact_error}), 400
     except Exception as e:
-        return jsonify({"valid": False, "error": f"नेटवर्क एरर: {str(e)}"}), 400
+        return jsonify({"valid": False, "error": "नेटवर्क एरर: " + str(e)}), 400
 
 @app.route("/search", methods=["POST"])
 def search():
@@ -207,7 +213,7 @@ def search():
 
     final_queries = []
     for num in specific_nums:
-        final_queries.append(num) # नम्बर मात्र पठाउने
+        final_queries.append(num)
 
     if general:
         final_queries.append(general)
@@ -258,20 +264,20 @@ def chat():
     for g in results[:5]:
         for m in g["matches"][:6]:
             sec = m["section"] or "सन्दर्भ अज्ञात"
-            ctx_lines.append(f"[PDF: {g['filename']} | पृष्ठ {m['page']} | {sec}] {m['snippet']}")
+            ctx_lines.append("[PDF: " + g['filename'] + " | पृष्ठ " + str(m['page']) + " | " + sec + "] " + m['snippet'])
     context_str = "\n".join(ctx_lines) if ctx_lines else "कुनै मिल्दो सामग्री भेटिएन।"
     
     prompt = (
         "तपाईं नेपाली कानुनी सहायक हुनुहुन्छ। तल दिइएको PDF सामग्रीको आधारमा मात्र प्रश्नको जवाफ दिनुहोस्। "
         "बाहिरी ज्ञान (Internet) वा आफ्नो जानकारी प्रयोग गर्न पूर्ण रूपमा मनाही छ। "
         "यदि जवाफ दिइएको PDF सामग्रीमा छैन भने, 'माफ गर्नुहोस्, यो जानकारी दिइएको PDF मा भेटिएन।' भन्नुहोस्।\n\n"
-        f"PDF सामग्री:\n{context_str}\n\nप्रश्न: {query_str}\n"
+        "PDF सामग्री:\n" + context_str + "\n\nप्रश्न: " + query_str + "\n"
     )
     
     last_error = ""
     for api_key in keys_to_try:
         try:
-            list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+            list_url = "https://generativelanguage.googleapis.com/v1beta/models?key=" + api_key
             list_res = requests.get(list_url, timeout=10)
             if list_res.status_code != 200:
                 last_error = list_res.json().get("error", {}).get("message", "Key अमान्य")
@@ -283,7 +289,7 @@ def chat():
             
             for model in available_models:
                 try:
-                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+                    url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + api_key
                     r = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=30)
                     if r.status_code == 200:
                         j = r.json()
@@ -294,7 +300,7 @@ def chat():
         except Exception as e:
             last_error = str(e)
                 
-    fallback_msg = f"⚠️ (Gemini API समस्या: {last_error}। स्थानीय खोज नतिजा तल छ।)\n\n"
+    fallback_msg = "⚠️ (Gemini API समस्या: " + last_error + "। स्थानीय खोज नतिजा तल छ।)\n\n"
     return jsonify({"answer": fallback_msg + "PDF हरूमा भेटिएका मिल्दा स्थानहरू तल देखाइएका छन्।", "results": results, "mode": "fallback"})
 
 if __name__ == "__main__":
