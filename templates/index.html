@@ -35,7 +35,6 @@
   .nav-item { position: relative; cursor: pointer; padding: 12px 18px; font-weight: 500; color: #333; font-size: 15px; transition: 0.2s; border-right: 1px solid #f0f0f0; }
   .nav-item:hover { background: #145db5; color: #fff; }
   
-  /* Hover Menu Gap Fix */
   .dropdown { display: none; position: absolute; top: 100%; left: 0; background: #fff; min-width: max-content; box-shadow: 0 4px 15px rgba(0,0,0,0.15); border-radius: 0 0 4px 4px; z-index: 100; border: 1px solid #ccc; border-top: none; padding: 10px 0 0 0; margin-top: -5px; text-align: left;}
   .nav-item:hover > .dropdown { display: block; }
   
@@ -89,7 +88,13 @@
         <select id="searchPdfSelect" onchange="toggleViewBtn()">
           <option value="">— PDF छान्नुहोस् —</option>
         </select>
-        <button id="viewSelectedPdfBtn" style="width:100%; background:#059669; margin-bottom:10px; display:none;" onclick="viewSelectedPdf()">📖 यो PDF पढ्नुहोस्</button>
+        
+        <!-- यहाँ दुईवटा बटन राखिएको छ (हेर्न र डाउनलोड) -->
+        <div style="display:flex; gap:10px; margin-bottom:10px;">
+            <button id="viewSelectedPdfBtn" style="flex:1; background:#059669; display:none;" onclick="viewSelectedPdf()">📖 यो PDF पढ्नुहोस्</button>
+            <button id="downloadSelectedPdfBtn" style="flex:1; background:#dc2626; display:none;" onclick="downloadSelectedPdf()">⬇️ डाउनलोड</button>
+        </div>
+
         <div id="pdfSearchInputs">
           <div class="search-input-row">
             <input type="text" class="pdf-query" placeholder="खोज्नको लागि शब्द लेख्नुहोस् (जस्तै: दफा 10)...">
@@ -136,10 +141,22 @@ const GITHUB_BRANCH = "main";
 
 function cleanName(name) { return name.replace(/\.pdf$/i, ''); }
 
+// PDF हेर्नको लागि लिंक (Google Viewer)
 function getPdfViewerUrl(filepath) {
   const encodedPath = filepath.split('/').map(encodeURIComponent).join('/');
   const rawUrl = `https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}/pdfs/${encodedPath}`;
   return `https://docs.google.com/viewer?url=${encodeURIComponent(rawUrl)}&embedded=true`;
+}
+
+// PDF डाउनलोड गर्नको लागि लिंक (Raw Link)
+function getDownloadUrl(filepath) {
+  const encodedPath = filepath.split('/').map(encodeURIComponent).join('/');
+  return `https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}/pdfs/${encodedPath}`;
+}
+
+// हेडरमा क्लिक गर्दा यही फंक्शन चल्छ (जसले PDF खोल्छ)
+window.openPdfFromHeader = function(filepath) {
+  window.open(getPdfViewerUrl(filepath), '_blank');
 }
 
 function buildTree(paths) {
@@ -158,6 +175,7 @@ function buildTree(paths) {
   return tree;
 }
 
+// हेडर रेन्डर (अब <a> ट्यागको सट्टा जाभास्क्रिप्टले खोल्ने)
 function renderTree(tree, level = 0) {
   let html = '';
   let keys = Object.keys(tree).filter(k => k !== '_isFile' && k !== '_path');
@@ -179,7 +197,9 @@ function renderTree(tree, level = 0) {
         html += `<div class="sub-dropdown">${renderTree(node, level + 1)}</div>`;
         html += `</div>`;
       } else if (isFile) {
-        html += `<a href="${getPdfViewerUrl(node._path)}" target="_blank" class="dropdown-item">📄 ${esc(displayName)}</a>`;
+        // हेडरमा क्लिक गर्दा सिधै openPdfFromHeader चल्ने
+        const safePath = node._path.replace(/'/g, "\\'");
+        html += `<a href="javascript:void(0)" onclick="openPdfFromHeader('${safePath}')" class="dropdown-item">📄 ${esc(displayName)}</a>`;
       }
     }
   });
@@ -230,14 +250,28 @@ function updatePdfSelect() {
   toggleViewBtn();
 }
 
+// दुवै बटन (पढ्ने र डाउनलोड) देखाउने/लुकाउने
 function toggleViewBtn() {
   const val = $('#searchPdfSelect').value;
-  $('#viewSelectedPdfBtn').style.display = val ? 'block' : 'none';
+  if (val) {
+    $('#viewSelectedPdfBtn').style.display = 'block';
+    $('#downloadSelectedPdfBtn').style.display = 'block';
+  } else {
+    $('#viewSelectedPdfBtn').style.display = 'none';
+    $('#downloadSelectedPdfBtn').style.display = 'none';
+  }
 }
 
+// PDF पढ्ने बटनको फंक्शन
 function viewSelectedPdf() {
   const val = $('#searchPdfSelect').value;
   if (val) window.open(getPdfViewerUrl(val), '_blank');
+}
+
+// PDF डाउनलोड गर्ने बटनको फंक्शन
+function downloadSelectedPdf() {
+  const val = $('#searchPdfSelect').value;
+  if (val) window.open(getDownloadUrl(val), '_blank');
 }
 
 function toggleAllFolders(source) {
