@@ -1,5 +1,7 @@
 Flask
 PyMuPDF
 requests
+pytesseract
+Pillow
 python-dotenv
 gunicorn

@@ -1,6 +1,8 @@
 import os
 import re
 import requests
+import pytesseract
+from PIL import Image
 from flask import Flask, render_template, request, jsonify
 import fitz
 from dotenv import load_dotenv
@@ -25,57 +27,68 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         
         if q_digits:
-            # अंग्रेजी र नेपाली दुवै अंकको भेरिएसन बनाउने
             q_nep = q_digits.translate(str.maketrans("0123456789", "०१२३४५६७८९"))
             q_ascii = q_digits.translate(str.maketrans("०१२३४५६७८९", "0123456789"))
-            nums = list(set([q_nep, q_ascii]))
-            
-            # डट र स्पेसका सम्भावित क्यारेक्टरहरू (अंग्रेजी डट, नेपाली दण्ड, ब्राकेट आदि)
-            sep_chars = '.।॰·)|: \t、｡'
+            search_needles = [f"{q_nep}.", f"{q_ascii}.", f"{q_nep}", f"{q_ascii}"]
             
             for page_num in range(len(doc)):
-                page_text = doc[page_num].get_text("text")
-                for line in page_text.split('\n'):
-                    if not line.strip(): continue
-                    
-                    # अदृश्य क्यारेक्टर (ZWNJ, ZWJ, NBSP) हटाउने
-                    line_clean = re.sub(r'[\u200b\u200c\u200d\ufeff\u00a0]', ' ', line).strip()
-                    
-                    # लाइनको सुरुका सबै डिजिट नभएका क्यारेक्टर हटाउने
-                    line_clean = re.sub(r'^[^\d०-९]+', '', line_clean)
-                    
-                    matched = False
-                    for num in nums:
-                        if line_clean.startswith(num):
-                            rest = line_clean[len(num):]
-                            if not rest or (rest and rest[0] in sep_chars):
-                                matched = True
-                                break
-                    
-                    if matched:
-                        results.append({
-                            "page": page_num + 1,
-                            "section": f"{expected_prefix} {q_nep}",
-                            "snippet": line.strip()[:200]
-                        })
-                        if len(results) >= max_results: break
+                page = doc[page_num]
+                page_text = page.get_text("text")
                 
+                found_on_page = False
+                for needle in search_needles:
+                    # page.search_for प्रयोग गर्ने (Chrome को Ctrl+F जस्तै)
+                    # flags ले स्पेस र लाइन ब्रेकको समस्या हटाउन मद्दत गर्छ
+                    rects = page.search_for(needle, flags=fitz.TEXT_PRESERVE_WHITESPACE | fitz.TEXT_DEHYPHENATE)
+                    if rects:
+                        for line in page_text.split('\n'):
+                            if needle in line:
+                                results.append({
+                                    "page": page_num + 1,
+                                    "section": f"{expected_prefix} {q_nep}",
+                                    "snippet": line.strip()[:200]
+                                })
+                                found_on_page = True
+                                break
+                    if found_on_page: break
+                
+                # यदि search_for ले भेटेन भने (टेक्स्ट बिग्रेको हुन सक्छ) -> OCR प्रयोग गर्ने
+                if not found_on_page:
+                    try:
+                        pix = page.get_pixmap(dpi=300)
+                        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                        ocr_text = pytesseract.image_to_string(img, lang='nep')
+                        for line in ocr_text.split('\n'):
+                            if q_nep in line or q_ascii in line:
+                                results.append({
+                                    "page": page_num + 1,
+                                    "section": f"{expected_prefix} {q_nep} (OCR)",
+                                    "snippet": line.strip()[:200]
+                                })
+                                break
+                    except Exception as e:
+                        print(f"OCR Error: {e}")
+                        
                 if len(results) >= max_results: break
+                
         else:
-            # टेक्स्ट सर्च (जस्तै: टायल चेक)
-            clean_q = re.sub(r'\s+', '', query)
+            clean_q = query.strip()
             for page_num in range(len(doc)):
-                page_text = doc[page_num].get_text("text")
-                for line in page_text.split('\n'):
-                    if clean_q in re.sub(r'\s+', '', line):
-                        results.append({
-                            "page": page_num + 1,
-                            "section": "सन्दर्भ",
-                            "snippet": line.strip()[:200]
-                        })
-                        if len(results) >= max_results: break
+                page = doc[page_num]
+                # search_for प्रयोग गर्ने
+                rects = page.search_for(clean_q, flags=fitz.TEXT_PRESERVE_WHITESPACE | fitz.TEXT_DEHYPHENATE)
+                if rects:
+                    page_text = page.get_text("text")
+                    for line in page_text.split('\n'):
+                        if clean_q in line:
+                            results.append({
+                                "page": page_num + 1,
+                                "section": "सन्दर्भ",
+                                "snippet": line.strip()[:200]
+                            })
+                            break
                 if len(results) >= max_results: break
-        
+                
         doc.close()
     except Exception as e:
         print(f"[search_in_pdf_bytes] Error: {e}")
