@@ -16,63 +16,66 @@ NEPALI_DIGITS = str.maketrans("०१२३४५६७८९", "0123456789")
 def _norm(t):
     return t.lower().translate(NEPALI_DIGITS)
 
-SECTION_RE = re.compile(r"((?:धारा|दफा|नियम|उपनियम|निर्देशन|अनुसूची)\s*[\d०-९]+)")
-
-def _find_exact(pdf_bytes, q_norm, max_results=30):
+def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
     results = []
+    
+    # १. फोल्डरको नाम हेरेर व्याकरण (Prefix) निर्धारण गर्ने
+    expected_prefix = "दफा"
+    context_lower = folder_context.lower()
+    if "संविधान" in context_lower or "sambidhan" in context_lower:
+        expected_prefix = "धारा"
+    elif "निर्देशिका" in context_lower or "nirdeshika" in context_lower:
+        expected_prefix = "निर्देशन"
+    elif "नियम" in context_lower or "niyam" in context_lower:
+        expected_prefix = "नियम"
+        
+    # २. प्रयोगकर्ताले नम्बर हालेको छ कि टेक्स्ट हालेको छ पहिचान गर्ने
+    clean_q = re.sub(r'[^\d०-९]', '', query.strip()) # संख्या बाहेक सबै हटाउने (जस्तै: 5., (५) -> 5)
+    is_number_query = bool(clean_q) and len(clean_q) > 0
+    
+    clean_q_norm = _norm(clean_q) if is_number_query else ""
+    q_text_norm = _norm(query.strip()).replace(" ", "")
+
     try:
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        carried_section = None
+        
+        # ३. हेडर (१., २., ३. ... १००.) मात्र पहिचान गर्ने Regex
+        header_regex = re.compile(r"(?m)^\s*([०-९]+|\d+)\s*[\.\)]\s*(.*)")
+        
         for page_num in range(len(doc)):
             page_text = doc[page_num].get_text("text")
-            page_norm_clean = _norm(page_text).replace(" ", "").replace("\n", "").replace("\r", "")
-            section_positions = [(m.start(), m.group()) for m in SECTION_RE.finditer(_norm(page_text))]
             
-            idx = 0
-            while True:
-                pos = page_norm_clean.find(q_norm, idx)
-                if pos == -1: break
+            for match in header_regex.finditer(page_text):
+                num_raw = match.group(1)
+                header_text = match.group(2).strip()
                 
-                start = max(0, pos - 30)
-                end = min(len(page_norm_clean), pos + len(q_norm) + 80)
-                snippet = page_norm_clean[start:end]
+                num_norm = _norm(num_raw)
+                header_text_norm = _norm(header_text).replace(" ", "")
                 
-                section = carried_section
-                for sp, sname in section_positions:
-                    if sp <= pos: section = sname
+                match_found = False
+                section_display = f"{expected_prefix} {num_raw}"
+                
+                # यदि नम्बर खोजेको हो भने
+                if is_number_query:
+                    if clean_q_norm == num_norm:
+                        match_found = True
+                # यदि टेक्स्ट (जस्तै: टायल चेक) खोजेको हो भने
+                else:
+                    if q_text_norm in header_text_norm:
+                        match_found = True
                         
-                results.append({"page": page_num + 1, "section": section, "snippet": "..." + snippet + "..."})
-                idx = pos + 1
+                if match_found:
+                    snippet = f"{num_raw}. {header_text}"
+                    if len(snippet) > 150:
+                        snippet = snippet[:150] + "..."
+                    results.append({"page": page_num + 1, "section": section_display, "snippet": snippet})
+                    
                 if len(results) >= max_results: break
-                
-            if section_positions: carried_section = section_positions[-1][1]
             if len(results) >= max_results: break
         doc.close()
     except Exception as e:
-        print(f"[_find_exact] Error: {e}")
+        print(f"[search_in_pdf] Error: {e}")
     return results
-
-def search_in_pdf_bytes(pdf_bytes, query, max_results=30):
-    # १. पहिले हुबहु शब्द खोज्ने (Space हटाएर)
-    q_norm = _norm(query.strip()).replace(" ", "")
-    if not q_norm: return []
-    
-    exact_matches = _find_exact(pdf_bytes, q_norm, max_results)
-    if exact_matches:
-        return exact_matches
-        
-    # २. यदि हुबहु भेटिएन भने, वाक्यलाई टुक्राएर सबैभन्दा लामो शब्द खोज्ने
-    # (जस्तै: "टायल चेक" नभेटिए "चेक" खोज्ने)
-    words = [w.strip() for w in query.split() if len(w.strip()) > 1]
-    words.sort(key=len, reverse=True) # लामो शब्द पहिले खोज्ने
-    
-    for word in words:
-        w_norm = _norm(word)
-        matches = _find_exact(pdf_bytes, w_norm, max_results)
-        if matches:
-            return matches
-            
-    return []
 
 def get_github_pdfs():
     tree_url = f"https://api.github.com/repos/{GITHUB_REPO}/git/trees/{GITHUB_BRANCH}?recursive=1"
@@ -127,9 +130,12 @@ def collect_results(queries, filepaths=None, folders=None):
     for f in files_to_search:
         try:
             pdf_data = get_pdf_bytes_from_github(f)
+            # फोल्डरको नाम (Context) निकाल्ने
+            folder_context = f.split('/')[0] if '/' in f else ""
+            
             if pdf_data:
                 for q in queries:
-                    matches = search_in_pdf_bytes(pdf_data, q)
+                    matches = search_in_pdf_bytes(pdf_data, q, folder_context)
                     if matches:
                         if not any(x['filename'] == f and x['matches'] == matches for x in out):
                             out.append({"filename": f, "matches": matches, "query": q})
@@ -199,29 +205,20 @@ def search():
 
     final_queries = []
     for num in specific_nums:
-        # व्याकरण र ढाँचा मिलाएर सबै विकल्पहरू खोज्ने (जस्तै: दफा 5, 5., (५) आदि)
-        final_queries.extend([
-            f"धारा {num}", f"धारा{num}",
-            f"दफा {num}", f"दफा{num}",
-            f"नियम {num}", f"नियम{num}",
-            f"निर्देशन {num}", f"निर्देशन{num}",
-            f"अनुसूची {num}", f"अनुसूची{num}",
-            f"{num}.", f"{num})", f"({num})", f"({num}"
-        ])
+        final_queries.append(num) # नम्बर मात्र पठाउने, ब्याकएन्डले आफैं व्याकरण मिलाउँछ
 
     if general:
         final_queries.append(general)
     if queries:
         final_queries.extend(queries)
         
-    # डुप्लिकेट हटाउने र खाली भएको छान्ने
     final_queries = list(set([q for q in final_queries if q.strip()]))
     
     if not final_queries:
         return jsonify({"error": "खोज शब्द खाली छ।"}), 400
         
     filepath = target if mode == "specific" else None
-    folders = targets if mode == "folder" else None
+    folders = targets if mode in ["folder", "folders"] else None
     results = collect_results(final_queries, filepaths=filepath, folders=folders)
     return jsonify({"results": results})
 
@@ -235,8 +232,7 @@ def chat():
         user_key = user_key.split("=", 1)[1].strip()
 
     keys_to_try = []
-    if user_key:
-        keys_to_try.append(user_key)
+    if user_key: keys_to_try.append(user_key)
     env_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if env_key and env_key not in keys_to_try:
         keys_to_try.append(env_key)
@@ -253,7 +249,7 @@ def chat():
     query_str = " AND ".join(queries)
     
     filepath = target if mode == "specific" else None
-    folders = targets if mode == "folder" else None
+    folders = targets if mode in ["folder", "folders"] else None
     results = collect_results(queries, filepaths=filepath, folders=folders)
     
     ctx_lines = []
