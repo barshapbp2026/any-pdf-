@@ -209,11 +209,15 @@ def chat():
 "
         )
         
-        models_to_try = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.5-flash-8b"]
+                models_to_try = [
+            "gemini-2.0-flash", 
+            "gemini-1.5-flash", 
+            "gemini-1.5-pro"
+        ]
         last_error = ""
         for model in models_to_try:
             try:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+                url = f"https://generativelanguage.googleapis.com/v1/models/{model}:generateContent?key={api_key}"
                 r = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=30)
                 if r.status_code == 200:
                     j = r.json()
