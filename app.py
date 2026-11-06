@@ -20,7 +20,7 @@ SECTION_RE = re.compile(r"((?:धारा|दफा|नियम|उपनि�
 
 def search_in_pdf_bytes(pdf_bytes, query, max_results=30):
     results = []
-    # खोज्ने शब्दबाट सबै स्पेस हटाउने (जसले गर्दा "टायल चेक" र "टायल चेक" एउटै होस्)
+    # खोज्ने शब्दबाट सबै स्पेस हटाउने
     q_norm = _norm(query.strip()).replace(" ", "")
     if not q_norm: return results
     
@@ -177,14 +177,31 @@ def search():
     anusuchi = (data.get("anusuchi") or "").strip()
     general = (data.get("general") or "").strip()
     
+    specific_nums = []
+    if dhara: specific_nums.append(dhara)
+    if dafa: specific_nums.append(dafa)
+    if niyam: specific_nums.append(niyam)
+    if nirdeshan: specific_nums.append(nirdeshan)
+    if anusuchi: specific_nums.append(anusuchi)
+
     final_queries = []
-    if dhara: final_queries.append(f"धारा {dhara}")
-    if dafa: final_queries.append(f"दफा {dafa}")
-    if niyam: final_queries.append(f"नियम {niyam}")
-    if nirdeshan: final_queries.append(f"निर्देशन {nirdeshan}")
-    if anusuchi: final_queries.append(f"अनुसूची {anusuchi}")
-    if general: final_queries.append(general)
-    if queries: final_queries.extend(queries)
+    for num in specific_nums:
+        # व्याकरण मिलाएर सबै विकल्पहरू खोज्ने (प्रयोगकर्ताले जुनसुकै बक्समा लेखे पनि)
+        final_queries.extend([
+            f"धारा {num}", f"धारा{num}",
+            f"दफा {num}", f"दफा{num}",
+            f"नियम {num}", f"नियम{num}",
+            f"निर्देशन {num}", f"निर्देशन{num}",
+            f"अनुसूची {num}", f"अनुसूची{num}"
+        ])
+
+    if general:
+        final_queries.append(general)
+    if queries:
+        final_queries.extend(queries)
+        
+    # डुप्लिकेट हटाउने र खाली भएको छान्ने
+    final_queries = list(set([q for q in final_queries if q.strip()]))
     
     if not final_queries:
         return jsonify({"error": "खोज शब्द खाली छ।"}), 400
@@ -250,8 +267,6 @@ def chat():
                 
             models_data = list_res.json().get("models", [])
             available_models = [m["name"].replace("models/", "") for m in models_data if "generateContent" in m.get("supportedGenerationMethods", [])]
-            
-            # राम्रो मोडेल पहिले प्रयोग गर्न क्रम मिलाउने
             available_models.sort(key=lambda x: (0 if 'flash' in x else 1, x))
             
             for model in available_models:
