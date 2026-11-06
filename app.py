@@ -179,12 +179,11 @@ def chat():
         context = "\n".join(ctx_lines) if ctx_lines else "कुनै मिल्दो सामग्री भेटिएन।"
         prompt = f"तपाईं नेपाली कानुनी सहायक हुनुहुन्छ। तल दिइएको PDF सामग्रीको आधारमा प्रश्नको जवाफ दिनुहोस्।\n\nPDF सामग्री:\n{context}\n\nप्रश्न: {query_str}\n"
         
-        models_to_try = [
-            "gemini-2.5-flash", 
-            "gemini-3.8-flash", 
+                models_to_try = [
+            "gemini-2.0-flash", 
             "gemini-1.5-flash", 
-            "gemini-1.5-pro", 
-            "gemini-2.0-flash-exp"
+            "gemini-1.5-flash-8b", 
+            "gemini-1.5-pro"
         ]
         last_error = ""
         for model in models_to_try:
