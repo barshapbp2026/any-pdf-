@@ -18,22 +18,14 @@ def _norm(t):
 
 SECTION_RE = re.compile(r"((?:धारा|दफा|नियम|उपनियम|निर्देशन|अनुसूची)\s*[\d०-९]+)")
 
-def search_in_pdf_bytes(pdf_bytes, query, max_results=30):
+def _find_exact(pdf_bytes, q_norm, max_results=30):
     results = []
-    # खोज्ने शब्दबाट सबै स्पेस हटाउने
-    q_norm = _norm(query.strip()).replace(" ", "")
-    if not q_norm: return results
-    
     try:
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         carried_section = None
         for page_num in range(len(doc)):
             page_text = doc[page_num].get_text("text")
-            
-            # PDF को टेक्स्टबाट पनि सबै स्पेस र नयाँ लाइन हटाउने
             page_norm_clean = _norm(page_text).replace(" ", "").replace("\n", "").replace("\r", "")
-            
-            # पेजमा भएका धारा/दफा पत्ता लगाउने
             section_positions = [(m.start(), m.group()) for m in SECTION_RE.finditer(_norm(page_text))]
             
             idx = 0
@@ -41,7 +33,6 @@ def search_in_pdf_bytes(pdf_bytes, query, max_results=30):
                 pos = page_norm_clean.find(q_norm, idx)
                 if pos == -1: break
                 
-                # स्निपेट (झलक) निकाल्नको लागि नजिकैको टेक्स्ट हेर्ने
                 start = max(0, pos - 30)
                 end = min(len(page_norm_clean), pos + len(q_norm) + 80)
                 snippet = page_norm_clean[start:end]
@@ -58,8 +49,30 @@ def search_in_pdf_bytes(pdf_bytes, query, max_results=30):
             if len(results) >= max_results: break
         doc.close()
     except Exception as e:
-        print(f"[search_in_pdf] Error: {e}")
+        print(f"[_find_exact] Error: {e}")
     return results
+
+def search_in_pdf_bytes(pdf_bytes, query, max_results=30):
+    # १. पहिले हुबहु शब्द खोज्ने (Space हटाएर)
+    q_norm = _norm(query.strip()).replace(" ", "")
+    if not q_norm: return []
+    
+    exact_matches = _find_exact(pdf_bytes, q_norm, max_results)
+    if exact_matches:
+        return exact_matches
+        
+    # २. यदि हुबहु भेटिएन भने, वाक्यलाई टुक्राएर सबैभन्दा लामो शब्द खोज्ने
+    # (जस्तै: "टायल चेक" नभेटिए "चेक" खोज्ने)
+    words = [w.strip() for w in query.split() if len(w.strip()) > 1]
+    words.sort(key=len, reverse=True) # लामो शब्द पहिले खोज्ने
+    
+    for word in words:
+        w_norm = _norm(word)
+        matches = _find_exact(pdf_bytes, w_norm, max_results)
+        if matches:
+            return matches
+            
+    return []
 
 def get_github_pdfs():
     tree_url = f"https://api.github.com/repos/{GITHUB_REPO}/git/trees/{GITHUB_BRANCH}?recursive=1"
@@ -186,13 +199,14 @@ def search():
 
     final_queries = []
     for num in specific_nums:
-        # व्याकरण मिलाएर सबै विकल्पहरू खोज्ने (प्रयोगकर्ताले जुनसुकै बक्समा लेखे पनि)
+        # व्याकरण र ढाँचा मिलाएर सबै विकल्पहरू खोज्ने (जस्तै: दफा 5, 5., (५) आदि)
         final_queries.extend([
             f"धारा {num}", f"धारा{num}",
             f"दफा {num}", f"दफा{num}",
             f"नियम {num}", f"नियम{num}",
             f"निर्देशन {num}", f"निर्देशन{num}",
-            f"अनुसूची {num}", f"अनुसूची{num}"
+            f"अनुसूची {num}", f"अनुसूची{num}",
+            f"{num}.", f"{num})", f"({num})", f"({num}"
         ])
 
     if general:
