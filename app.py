@@ -250,6 +250,35 @@ def chat():
 "
     return jsonify({"answer": fallback_msg + "PDF हरूमा भेटिएका मिल्दा स्थानहरू तल देखाइएका छन्।", "results": results, "mode": "fallback"})
 
+@app.route("/check_api_key", methods=["POST"])
+def check_api_key():
+    data = request.get_json() or {}
+    raw_api_key = (data.get("api_key") or "").strip()
+    if raw_api_key.startswith("GEMINI_API_KEY="):
+        raw_api_key = raw_api_key.split("=", 1)[1].strip()
+        
+    if not raw_api_key:
+        return jsonify({"valid": False, "error": "API Key खाली छ"}), 400
+        
+    # Key जाँच्नको लागि स्थिर मोडेलहरू
+    models_to_test = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-3.8-flash"]
+    
+    for model in models_to_test:
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={raw_api_key}"
+            # सानो र छिटो रिक्वेस्ट पठाउने (maxOutputTokens: 1)
+            r = requests.post(url, json={"contents": [{"parts": [{"text": "hi"}]}], "generationConfig": {"maxOutputTokens": 1}}, timeout=10)
+            
+            if r.status_code == 200:
+                return jsonify({"valid": True})
+            elif r.status_code in [400, 403]:
+                err_msg = r.json().get("error", {}).get("message", "Invalid API Key")
+                return jsonify({"valid": False, "error": err_msg}), r.status_code
+        except Exception:
+            pass
+            
+    return jsonify({"valid": False, "error": "API Key अमान्य छ वा कुनै पनि मोडेल उपलब्ध छैन"}), 400
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)

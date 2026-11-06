@@ -69,7 +69,11 @@
 
 <header>
   <h1>📚 नेपाली कानुनी PDF सहायक</h1>
-  <input type="text" id="apiKey" placeholder="Gemini API Key (सिधै Key मात्र हाल्नुहोस्)">
+  <div style="display:flex; gap:10px; align-items:center;">
+        <input type="text" id="apiKey" placeholder="Gemini API Key (सिधै Key मात्र हाल्नुहोस्)" style="margin-bottom:0;">
+        <button onclick="checkApiKey()" style="padding:9px 15px; background:#10b981; white-space:nowrap;">Key जाँच</button>
+        <span id="apiKeyStatus" style="font-weight:bold; font-size:14px; white-space:nowrap;"></span>
+    </div>
 </header>
 
 <div class="container">
@@ -446,6 +450,42 @@ $('#chatBtn').onclick = async () => {
   $('#answerWrap').innerHTML = `<div class="answer">${esc(d.answer)}</div>`;
   renderResults(d.results, query);
 };
+
+
+async function checkApiKey() {
+    const key = document.getElementById('apiKey').value.trim();
+    const statusSpan = document.getElementById('apiKeyStatus');
+    
+    if (!key) {
+        statusSpan.innerText = "❌ Key खाली छ";
+        statusSpan.style.color = "#ef4444";
+        return;
+    }
+    
+    statusSpan.innerText = "⏳ जाँच हुँदै...";
+    statusSpan.style.color = "#f59e0b";
+    
+    try {
+        const r = await fetch('/check_api_key', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({api_key: key})
+        });
+        const d = await r.json();
+        if (d.valid) {
+            statusSpan.innerText = "✅ Valid";
+            statusSpan.style.color = "#10b981";
+        } else {
+            statusSpan.innerText = "❌ Invalid: " + (d.error || "अज्ञात कारण");
+            statusSpan.style.color = "#ef4444";
+        }
+    } catch (e) {
+        statusSpan.innerText = "❌ नेटवर्क एरर";
+        statusSpan.style.color = "#ef4444";
+    }
+}
+
+// यसलाई loadPdfs() भन्दा अगाडि राख्ने
 
 loadPdfs();
 </script>
