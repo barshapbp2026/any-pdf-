@@ -126,6 +126,33 @@ def serve_pdf(filepath):
         return pdf_data, 200, {'Content-Type': 'application/pdf'}
     return "PDF File not found on GitHub", 404
 
+@app.route("/check_api_key", methods=["POST"])
+def check_api_key():
+    data = request.get_json() or {}
+    raw_api_key = (data.get("api_key") or "").strip()
+    if raw_api_key.startswith("GEMINI_API_KEY="):
+        raw_api_key = raw_api_key.split("=", 1)[1].strip()
+        
+    if not raw_api_key:
+        return jsonify({"valid": False, "error": "API Key खाली छ"}), 400
+        
+    models_to_test = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-3.8-flash"]
+    
+    for model in models_to_test:
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={raw_api_key}"
+            r = requests.post(url, json={"contents": [{"parts": [{"text": "hi"}]}], "generationConfig": {"maxOutputTokens": 1}}, timeout=10)
+            
+            if r.status_code == 200:
+                return jsonify({"valid": True})
+            elif r.status_code in [400, 403]:
+                err_msg = r.json().get("error", {}).get("message", "Invalid API Key")
+                return jsonify({"valid": False, "error": err_msg}), r.status_code
+        except Exception:
+            pass
+            
+    return jsonify({"valid": False, "error": "API Key अमान्य छ वा कुनै पनि मोडेल उपलब्ध छैन"}), 400
+
 @app.route("/search", methods=["POST"])
 def search():
     data = request.get_json() or {}
@@ -164,11 +191,9 @@ def chat():
     queries = data.get("queries", [])
     user_key = (data.get("api_key") or "").strip()
     
-    # Key सफा गर्ने (यदि GEMINI_API_KEY=... भनेर हालिएको छ भने)
     if user_key.startswith("GEMINI_API_KEY="):
         user_key = user_key.split("=", 1)[1].strip()
 
-    # Fallback Keys को सूची बनाउने
     keys_to_try = []
     if user_key:
         keys_to_try.append(user_key)
@@ -198,34 +223,26 @@ def chat():
         for m in g["matches"][:6]:
             sec = m["section"] or "सन्दर्भ अज्ञात"
             ctx_lines.append(f"[PDF: {g['filename']} | पृष्ठ {m['page']} | {sec}] {m['snippet']}")
-    context = "
-".join(ctx_lines) if ctx_lines else "कुनै मिल्दो सामग्री भेटिएन।"
+    
+    context_str = "\n".join(ctx_lines) if ctx_lines else "कुनै मिल्दो सामग्री भेटिएन।"
     
     prompt = (
-        "तपाईं नेपाली कानुनी सहायक हुनुहुन्छ। तल दिइएको PDF सामग्रीको आधारमा **मात्र** प्रश्नको जवाफ दिनुहोस्। "
-        "बाहिरी ज्ञान (Internet) वा आफ्नो जानकारी प्रयोग गर्न **पूर्ण रूपमा मनाही छ**। "
-        "यदि जवाफ दिइएको PDF सामग्रीमा छैन भने, 'माफ गर्नुहोस्, यो जानकारी दिइएको PDF मा भेटिएन।' भन्नुहोस्।
-
-"
-        f"PDF सामग्री:
-{context}
-
-प्रश्न: {query_str}
-"
+        "तपाईं नेपाली कानुनी सहायक हुनुहुन्छ। तल दिइएको PDF सामग्रीको आधारमा मात्र प्रश्नको जवाफ दिनुहोस्। "
+        "बाहिरी ज्ञान (Internet) वा आफ्नो जानकारी प्रयोग गर्न पूर्ण रूपमा मनाही छ। "
+        "यदि जवाफ दिइएको PDF सामग्रीमा छैन भने, 'माफ गर्नुहोस्, यो जानकारी दिइएको PDF मा भेटिएन।' भन्नुहोस्।\n\n"
+        f"PDF सामग्री:\n{context_str}\n\nप्रश्न: {query_str}\n"
     )
     
-    # गुगलले २०२६ मा सिफारिस गरेका नयाँ र स्थिर मोडेलहरू
-            models_to_try = [
-            "gemini-3.8-flash",
-            "gemini-3.5-flash-lite",
-            "gemini-flash-latest",
-            "gemini-2.0-flash",
-            "gemini-1.5-pro",
-            "gemini-1.5-flash"
-        ]
+    models_to_try = [
+        "gemini-3.8-flash",
+        "gemini-3.5-flash-lite",
+        "gemini-flash-latest",
+        "gemini-2.0-flash",
+        "gemini-1.5-pro",
+        "gemini-1.5-flash"
+    ]
     
     last_error = ""
-    # Key Fallback र Model Fallback दुवै लूपमा चलाउने
     for api_key in keys_to_try:
         for model in models_to_try:
             try:
@@ -244,40 +261,8 @@ def chat():
             except Exception as e:
                 last_error = str(e)
                 
-    # यदि सबै Key र Model फेल भए, स्थानीय खोज नतिजा देखाउने
-    fallback_msg = f"⚠️ (Gemini API समस्या: {last_error}। स्थानीय खोज नतिजा तल छ।)
-
-"
+    fallback_msg = f"⚠️ (Gemini API समस्या: {last_error}। स्थानीय खोज नतिजा तल छ।)\n\n"
     return jsonify({"answer": fallback_msg + "PDF हरूमा भेटिएका मिल्दा स्थानहरू तल देखाइएका छन्।", "results": results, "mode": "fallback"})
-
-@app.route("/check_api_key", methods=["POST"])
-def check_api_key():
-    data = request.get_json() or {}
-    raw_api_key = (data.get("api_key") or "").strip()
-    if raw_api_key.startswith("GEMINI_API_KEY="):
-        raw_api_key = raw_api_key.split("=", 1)[1].strip()
-        
-    if not raw_api_key:
-        return jsonify({"valid": False, "error": "API Key खाली छ"}), 400
-        
-    # Key जाँच्नको लागि स्थिर मोडेलहरू
-    models_to_test = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-3.8-flash"]
-    
-    for model in models_to_test:
-        try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={raw_api_key}"
-            # सानो र छिटो रिक्वेस्ट पठाउने (maxOutputTokens: 1)
-            r = requests.post(url, json={"contents": [{"parts": [{"text": "hi"}]}], "generationConfig": {"maxOutputTokens": 1}}, timeout=10)
-            
-            if r.status_code == 200:
-                return jsonify({"valid": True})
-            elif r.status_code in [400, 403]:
-                err_msg = r.json().get("error", {}).get("message", "Invalid API Key")
-                return jsonify({"valid": False, "error": err_msg}), r.status_code
-        except Exception:
-            pass
-            
-    return jsonify({"valid": False, "error": "API Key अमान्य छ वा कुनै पनि मोडेल उपलब्ध छैन"}), 400
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
