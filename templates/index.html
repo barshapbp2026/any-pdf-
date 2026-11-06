@@ -124,8 +124,24 @@
     </div>
   </div>
 
+  <!-- च्याट सेक्सन (स्कोप छान्ने अप्सन सहित) -->
   <div class="card">
     <h2>💬 PDF सँग प्रश्न सोध्नुहोस्</h2>
+    
+    <div class="row" style="margin-bottom: 10px;">
+      <select id="chatScope" onchange="updateChatScope()" style="flex:1;">
+        <option value="all">🌐 सबै PDF हरूमा खोज्नुहोस्</option>
+        <option value="folder">📁 निश्चित फोल्डर भित्र खोज्नुहोस्</option>
+        <option value="specific">📄 निश्चित PDF भित्र खोज्नुहोस्</option>
+      </select>
+    </div>
+
+    <!-- फोल्डर वा PDF छान्ने ड्रपडाउन (Default मा लुकेको) -->
+    <div class="row" id="chatTargetRow" style="display:none; margin-bottom: 10px;">
+        <select id="chatFolderSelect" style="flex:1; display:none;" onchange="updateChatPdfSelect()"></select>
+        <select id="chatPdfSelect" style="flex:1; display:none;"></select>
+    </div>
+
     <div class="row">
       <input type="text" id="chatQuery" placeholder="तपाईंको प्रश्न..." style="flex:1;min-width:220px; margin-bottom:0;">
       <button id="chatBtn">पठाउनुहोस्</button>
@@ -208,6 +224,7 @@ function renderTree(tree, level = 0) {
 }
 
 let allFiles = [];
+let allFolders = [];
 
 async function loadPdfs() {
   const r = await fetch('/list_pdfs');
@@ -230,14 +247,49 @@ async function loadPdfs() {
     }
   });
   
-  const allFolders = Array.from(folderSet).sort((a, b) => a.localeCompare(b, 'ne', { numeric: true }));
+  allFolders = Array.from(folderSet).sort((a, b) => a.localeCompare(b, 'ne', { numeric: true }));
+  
+  // सर्चको लागि
   let folderSelectHtml = '<option value="">— पहिले फोल्डर छान्नुहोस् —</option>';
   allFolders.forEach(f => folderSelectHtml += `<option value="${esc(f)}">📁 ${esc(f)}</option>`);
   $('#searchFolderSelect').innerHTML = folderSelectHtml;
+  
+  // च्याटको लागि
+  let chatFolderHtml = '<option value="">— फोल्डर छान्नुहोस् —</option>';
+  allFolders.forEach(f => chatFolderHtml += `<option value="${esc(f)}">📁 ${esc(f)}</option>`);
+  $('#chatFolderSelect').innerHTML = chatFolderHtml;
 
   let checkboxHtml = `<label class="select-all-row"><input type="checkbox" id="selectAllFolders" onchange="toggleAllFolders(this)"> ☑️ सबै छान्नुहोस् (Select All)</label>`;
   allFolders.forEach(f => checkboxHtml += `<label><input type="checkbox" class="folder-checkbox" value="${esc(f)}"> 📁 ${esc(f)}</label>`);
   $('#folderCheckboxes').innerHTML = checkboxHtml;
+}
+
+// च्याट स्कोप अपडेट गर्ने
+function updateChatScope() {
+    const scope = $('#chatScope').value;
+    if (scope === 'all') {
+        $('#chatTargetRow').style.display = 'none';
+    } else if (scope === 'folder') {
+        $('#chatTargetRow').style.display = 'flex';
+        $('#chatFolderSelect').style.display = 'block';
+        $('#chatPdfSelect').style.display = 'none';
+    } else if (scope === 'specific') {
+        $('#chatTargetRow').style.display = 'flex';
+        $('#chatFolderSelect').style.display = 'block';
+        $('#chatPdfSelect').style.display = 'block';
+        updateChatPdfSelect();
+    }
+}
+
+// च्याटको लागि PDF ड्रपडाउन अपडेट गर्ने
+function updateChatPdfSelect() {
+    const selectedFolder = $('#chatFolderSelect').value;
+    const pdfSelect = $('#chatPdfSelect');
+    if (!selectedFolder) { pdfSelect.innerHTML = '<option value="">— PDF छान्नुहोस् —</option>'; return; }
+    const filesInFolder = allFiles.filter(f => f.startsWith(selectedFolder + '/'));
+    let html = '<option value="">— PDF छान्नुहोस् —</option>';
+    filesInFolder.forEach(f => html += `<option value="${esc(f)}">📄 ${esc(cleanName(f))}</option>`);
+    pdfSelect.innerHTML = html;
 }
 
 function updatePdfSelect() {
@@ -369,11 +421,26 @@ function renderResults(results, query) {
 $('#chatBtn').onclick = async () => {
   const query = $('#chatQuery').value.trim();
   if (!query) return alert('प्रश्न लेख्नुहोस्');
+  
   const api_key = $('#apiKey').value.trim();
+  const mode = $('#chatScope').value;
+  let target = "";
+  let targets = [];
+  
+  if (mode === 'folder') {
+      target = $('#chatFolderSelect').value;
+      if (!target) return alert('कृपया फोल्डर छान्नुहोस्');
+      targets = [target]; // ब्याकएन्डमा array को रूपमा पठाउने
+  } else if (mode === 'specific') {
+      target = $('#chatPdfSelect').value;
+      if (!target) return alert('कृपया PDF छान्नुहोस्');
+  }
+
   $('#answerWrap').innerHTML = '<div class="answer">प्रश्न प्रशोधन हुँदैछ...</div>';
+  
   const r = await fetch('/chat', {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ queries: [query], api_key })
+    body: JSON.stringify({ queries: [query], api_key, mode, target, targets })
   });
   const d = await r.json();
   $('#answerWrap').innerHTML = `<div class="answer">${esc(d.answer)}</div>`;

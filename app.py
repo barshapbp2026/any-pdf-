@@ -164,7 +164,6 @@ def chat():
     queries = data.get("queries", [])
     raw_api_key = (data.get("api_key") or "").strip()
     
-    # यदि प्रयोगकर्ताले GEMINI_API_KEY=... भनेर हाल्यो भने पनि सफा गर्ने
     if raw_api_key.startswith("GEMINI_API_KEY="):
         raw_api_key = raw_api_key.split("=", 1)[1].strip()
     
@@ -175,8 +174,17 @@ def chat():
     if not queries or not any(q.strip() for q in queries):
         return jsonify({"error": "प्रश्न खाली छ।"}), 400
         
+    # च्याटको स्कोप (mode, target, targets) प्राप्त गर्ने
+    mode = data.get("mode", "all")
+    target = data.get("target", "")
+    targets = data.get("targets", [])
+    
     query_str = " AND ".join(queries)
-    results = collect_results(queries)
+    
+    # तोकिएको PDF वा फोल्डर भित्र मात्र खोज्ने
+    filepath = target if mode == "specific" else None
+    folders = targets if mode == "folder" else None
+    results = collect_results(queries, filepaths=filepath, folders=folders)
     
     if api_key:
         ctx_lines = []
@@ -184,16 +192,24 @@ def chat():
             for m in g["matches"][:6]:
                 sec = m["section"] or "सन्दर्भ अज्ञात"
                 ctx_lines.append(f"[PDF: {g['filename']} | पृष्ठ {m['page']} | {sec}] {m['snippet']}")
-        context = "\n".join(ctx_lines) if ctx_lines else "कुनै मिल्दो सामग्री भेटिएन।"
-        prompt = f"तपाईं नेपाली कानुनी सहायक हुनुहुन्छ। तल दिइएको PDF सामग्रीको आधारमा प्रश्नको जवाफ दिनुहोस्।\n\nPDF सामग्री:\n{context}\n\nप्रश्न: {query_str}\n"
+        context = "
+".join(ctx_lines) if ctx_lines else "कुनै मिल्दो सामग्री भेटिएन।"
         
-        # गुगलले आधिकारिक रूपमा सपोर्ट गर्ने मोडेलहरू मात्र
-        models_to_try = [
-            "gemini-1.5-flash", 
-            "gemini-1.5-pro", 
-            "gemini-1.5-flash-8b"
-        ]
+        # Gemini लाई बाहिरी ज्ञान प्रयोग नगर्न कडा निर्देशन
+        prompt = (
+            "तपाईं नेपाली कानुनी सहायक हुनुहुन्छ। तल दिइएको PDF सामग्रीको आधारमा **मात्र** प्रश्नको जवाफ दिनुहोस्। "
+            "बाहिरी ज्ञान (Internet) वा आफ्नो जानकारी प्रयोग गर्न **पूर्ण रूपमा मनाही छ**। "
+            "यदि जवाफ दिइएको PDF सामग्रीमा छैन भने, 'माफ गर्नुहोस्, यो जानकारी दिइएको PDF मा भेटिएन।' भन्नुहोस्।
+
+"
+            f"PDF सामग्री:
+{context}
+
+प्रश्न: {query_str}
+"
+        )
         
+        models_to_try = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.5-flash-8b"]
         last_error = ""
         for model in models_to_try:
             try:
@@ -209,7 +225,9 @@ def chat():
             except Exception as e:
                 last_error = str(e)
                 
-        fallback_msg = f"⚠️ (Gemini API समस्या: {last_error}। स्थानीय खोज नतिजा तल छ।)\n\n"
+        fallback_msg = f"⚠️ (Gemini API समस्या: {last_error}। स्थानीय खोज नतिजा तल छ।)
+
+"
         return jsonify({"answer": fallback_msg + "PDF हरूमा भेटिएका मिल्दा स्थानहरू तल देखाइएका छन्।", "results": results, "mode": "fallback"})
         
     return jsonify({"answer": "PDF हरूमा भेटिएका मिल्दा स्थानहरू तल देखाइएका छन्।", "results": results, "mode": "traditional"})
