@@ -139,7 +139,6 @@ def check_api_key():
     try:
         url = f"https://generativelanguage.googleapis.com/v1beta/models?key={raw_api_key}"
         r = requests.get(url, timeout=10)
-        
         if r.status_code == 200:
             return jsonify({"valid": True})
         else:
@@ -195,7 +194,6 @@ def chat():
     keys_to_try = []
     if user_key:
         keys_to_try.append(user_key)
-    
     env_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if env_key and env_key not in keys_to_try:
         keys_to_try.append(env_key)
@@ -209,7 +207,6 @@ def chat():
     mode = data.get("mode", "all")
     target = data.get("target", "")
     targets = data.get("targets", [])
-    
     query_str = " AND ".join(queries)
     
     filepath = target if mode == "specific" else None
@@ -221,7 +218,6 @@ def chat():
         for m in g["matches"][:6]:
             sec = m["section"] or "सन्दर्भ अज्ञात"
             ctx_lines.append(f"[PDF: {g['filename']} | पृष्ठ {m['page']} | {sec}] {m['snippet']}")
-    
     context_str = "\n".join(ctx_lines) if ctx_lines else "कुनै मिल्दो सामग्री भेटिएन।"
     
     prompt = (
@@ -231,30 +227,35 @@ def chat():
         f"PDF सामग्री:\n{context_str}\n\nप्रश्न: {query_str}\n"
     )
     
-    models_to_try = [
-        "gemini-1.5-flash",
-        "gemini-2.0-flash",
-        "gemini-1.5-pro"
-    ]
-    
     last_error = ""
     for api_key in keys_to_try:
-        for model in models_to_try:
-            try:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-                r = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=30)
-                if r.status_code == 200:
-                    j = r.json()
-                    if "candidates" in j and len(j["candidates"]) > 0:
-                        return jsonify({"answer": j["candidates"][0]["content"]["parts"][0]["text"], "results": results, "mode": "gemini"})
-                else:
-                    try: 
-                        err_data = r.json()
-                        last_error = err_data.get("error", {}).get("message", f"HTTP {r.status_code}")
-                    except: 
-                        last_error = f"HTTP {r.status_code}"
-            except Exception as e:
-                last_error = str(e)
+        # गुगलसँग यो Key ले कुन-कुन मोडेल चलाउँछ सोध्ने (Dynamic)
+        try:
+            list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+            list_res = requests.get(list_url, timeout=10)
+            if list_res.status_code != 200:
+                last_error = list_res.json().get("error", {}).get("message", "Key अमान्य")
+                continue
+                
+            models_data = list_res.json().get("models", [])
+            # generateContent सपोर्ट गर्ने मोडेलहरू मात्र छान्ने
+            available_models = [m["name"].replace("models/", "") for m in models_data if "generateContent" in m.get("supportedGenerationMethods", [])]
+            
+            # राम्रो मोडेल पहिले प्रयोग गर्न क्रम मिलाउने (Flash पहिले, Pro पछि)
+            available_models.sort(key=lambda x: (0 if 'flash' in x else 1, x))
+            
+            for model in available_models:
+                try:
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+                    r = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=30)
+                    if r.status_code == 200:
+                        j = r.json()
+                        if "candidates" in j and len(j["candidates"]) > 0:
+                            return jsonify({"answer": j["candidates"][0]["content"]["parts"][0]["text"], "results": results, "mode": "gemini"})
+                except Exception:
+                    continue
+        except Exception as e:
+            last_error = str(e)
                 
     fallback_msg = f"⚠️ (Gemini API समस्या: {last_error}। स्थानीय खोज नतिजा तल छ।)\n\n"
     return jsonify({"answer": fallback_msg + "PDF हरूमा भेटिएका मिल्दा स्थानहरू तल देखाइएका छन्।", "results": results, "mode": "fallback"})
