@@ -19,7 +19,7 @@ def _norm(t):
 def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
     results = []
     
-    # १. फोल्डरको नाम हेरेर व्याकरण (Prefix) निर्धारण गर्ने
+    # १. फोल्डरको नाम अनुसार व्याकरण (Prefix) छुट्याउने
     expected_prefix = "दफा"
     context_lower = folder_context.lower()
     if "संविधान" in context_lower or "sambidhan" in context_lower:
@@ -29,8 +29,9 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
     elif "नियम" in context_lower or "niyam" in context_lower:
         expected_prefix = "नियम"
         
-    # २. प्रयोगकर्ताले नम्बर हालेको छ कि टेक्स्ट हालेको छ पहिचान गर्ने
-    clean_q = re.sub(r'[^\d०-९]', '', query.strip()) # संख्या बाहेक सबै हटाउने (जस्तै: 5., (५) -> 5)
+    # २. प्रयोगकर्ताले नम्बर हालेको हो कि टेक्स्ट हालेको हो छुट्याउने
+    # (५, 5, (५), 5. सबैलाई 5 मा बदल्ने)
+    clean_q = re.sub(r'[^\d०-९]', '', query.strip())
     is_number_query = bool(clean_q) and len(clean_q) > 0
     
     clean_q_norm = _norm(clean_q) if is_number_query else ""
@@ -39,8 +40,9 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
     try:
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         
-        # ३. हेडर (१., २., ३. ... १००.) मात्र पहिचान गर्ने Regex
-        header_regex = re.compile(r"(?m)^\s*([०-९]+|\d+)\s*[\.\)]\s*(.*)")
+        # ३. हेडर (१., २., ३. ... १००.) पहिचान गर्ने Regex
+        # (लाइनको सुरुमा नम्बर र त्यसपछि डट वा ब्राकेट भएको)
+        header_regex = re.compile(r"(?m)^[ \t]*([०-९]+|\d+)[ \t]*[\.\)][ \t]*(.*)")
         
         for page_num in range(len(doc)):
             page_text = doc[page_num].get_text("text")
@@ -55,12 +57,12 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
                 match_found = False
                 section_display = f"{expected_prefix} {num_raw}"
                 
-                # यदि नम्बर खोजेको हो भने
                 if is_number_query:
+                    # यदि नम्बर खोजेको हो भने (जस्तै: 5 == ५)
                     if clean_q_norm == num_norm:
                         match_found = True
-                # यदि टेक्स्ट (जस्तै: टायल चेक) खोजेको हो भने
                 else:
+                    # यदि टेक्स्ट खोजेको हो भने (जस्तै: टायल चेक)
                     if q_text_norm in header_text_norm:
                         match_found = True
                         
@@ -205,7 +207,7 @@ def search():
 
     final_queries = []
     for num in specific_nums:
-        final_queries.append(num) # नम्बर मात्र पठाउने, ब्याकएन्डले आफैं व्याकरण मिलाउँछ
+        final_queries.append(num) # नम्बर मात्र पठाउने
 
     if general:
         final_queries.append(general)
