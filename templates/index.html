@@ -69,7 +69,7 @@
 
 <header>
   <h1>📚 नेपाली कानुनी PDF सहायक</h1>
-  <input type="text" id="apiKey" placeholder="Gemini API Key (यहाँ देखिन्छ)">
+  <input type="text" id="apiKey" placeholder="Gemini API Key (सिधै Key मात्र हाल्नुहोस्)">
 </header>
 
 <div class="container">
@@ -135,7 +135,6 @@
   <div class="card">
     <h2>📋 नतिजा</h2>
     <div id="answerWrap"></div>
-    <!-- यहाँ बाट 'अझै कुनै खोज गरिएको छैन' हटाएर खाली राखिएको छ -->
     <div id="resultsWrap"></div>
   </div>
 </div>
@@ -324,7 +323,6 @@ async function doSearch(type) {
     }
   }
   
-  // यहाँ सर्च गर्दा पुरानो 'अझै कुनै खोज गरिएको छैन' हटाएर लोड हुँदैछ देखाउने
   $('#resultsWrap').innerHTML = '<div class="empty">खोजिँदै...</div>';
   const r = await fetch('/search', {
     method:'POST', headers:{'Content-Type':'application/json'},

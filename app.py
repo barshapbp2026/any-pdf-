@@ -5,7 +5,7 @@ from flask import Flask, render_template, request, jsonify
 import fitz
 from dotenv import load_dotenv
 
-load_dotenv() # .env फाइल भए लोड गर्ने
+load_dotenv() 
 
 app = Flask(__name__)
 
@@ -132,7 +132,6 @@ def search():
     mode = data.get("mode", "all")
     target = data.get("target", "")
     targets = data.get("targets", [])
-    
     queries = data.get("queries", [])
     
     dhara = (data.get("dhara") or "").strip()
@@ -152,7 +151,7 @@ def search():
     if queries: final_queries.extend(queries)
     
     if not final_queries:
-        return jsonify({"error": "खोज शब्द खाली छ। कृपया कुनै एउटा बक्समा लेख्नुहोस्।"}), 400
+        return jsonify({"error": "खोज शब्द खाली छ।"}), 400
         
     filepath = target if mode == "specific" else None
     folders = targets if mode == "folder" else None
@@ -163,8 +162,16 @@ def search():
 def chat():
     data = request.get_json() or {}
     queries = data.get("queries", [])
-    api_key = (data.get("api_key") or "").strip()
+    raw_api_key = (data.get("api_key") or "").strip()
     
+    # यदि प्रयोगकर्ताले GEMINI_API_KEY=... भनेर हाल्यो भने पनि सफा गर्ने
+    if raw_api_key.startswith("GEMINI_API_KEY="):
+        raw_api_key = raw_api_key.split("=", 1)[1].strip()
+    
+    api_key = raw_api_key
+    if not api_key:
+        api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+
     if not queries or not any(q.strip() for q in queries):
         return jsonify({"error": "प्रश्न खाली छ।"}), 400
         
@@ -180,8 +187,8 @@ def chat():
         context = "\n".join(ctx_lines) if ctx_lines else "कुनै मिल्दो सामग्री भेटिएन।"
         prompt = f"तपाईं नेपाली कानुनी सहायक हुनुहुन्छ। तल दिइएको PDF सामग्रीको आधारमा प्रश्नको जवाफ दिनुहोस्।\n\nPDF सामग्री:\n{context}\n\nप्रश्न: {query_str}\n"
         
+        # गुगलले आधिकारिक रूपमा सपोर्ट गर्ने मोडेलहरू मात्र
         models_to_try = [
-            "gemini-2.0-flash", 
             "gemini-1.5-flash", 
             "gemini-1.5-pro", 
             "gemini-1.5-flash-8b"
