@@ -136,28 +136,21 @@ def check_api_key():
     if not raw_api_key:
         return jsonify({"valid": False, "error": "API Key खाली छ"}), 400
         
-    # Key जाँच्नको लागि सबैभन्दा स्थिर मोडेलहरू
-    models_to_test = ["gemini-1.5-flash", "gemini-1.5-pro"]
-    exact_error = "API Key अमान्य छ वा कुनै पनि मोडेल उपलब्ध छैन"
-    
-    for model in models_to_test:
-        try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={raw_api_key}"
-            r = requests.post(url, json={"contents": [{"parts": [{"text": "hi"}]}], "generationConfig": {"maxOutputTokens": 1}}, timeout=10)
-            
-            if r.status_code == 200:
-                return jsonify({"valid": True})
-            else:
-                # गुगलबाट आएको असली एरर सन्देश निकाल्ने
-                try:
-                    err_data = r.json()
-                    exact_error = err_data.get("error", {}).get("message", exact_error)
-                except:
-                    pass
-        except Exception as e:
-            exact_error = f"नेटवर्क एरर: {str(e)}"
-            
-    return jsonify({"valid": False, "error": exact_error}), 400
+    try:
+        # मोडेल प्रयोग नगरी सिधै Key जाँच्ने (List Models API)
+        url = f"https://generativelanguage.googleapis.com/v1beta/models?key={raw_api_key}"
+        r = requests.get(url, timeout=10)
+        
+        if r.status_code == 200:
+            return jsonify({"valid": True})
+        else:
+            try:
+                exact_error = r.json().get("error", {}).get("message", "API Key अमान्य छ")
+            except:
+                exact_error = f"HTTP {r.status_code} एरर"
+            return jsonify({"valid": False, "error": exact_error}), 400
+    except Exception as e:
+        return jsonify({"valid": False, "error": f"नेटवर्क एरर: {str(e)}"}), 400
 
 @app.route("/search", methods=["POST"])
 def search():
@@ -239,14 +232,11 @@ def chat():
         f"PDF सामग्री:\n{context_str}\n\nप्रश्न: {query_str}\n"
     )
     
-    models_to_try = [
-        "gemini-3.8-flash",
-        "gemini-3.5-flash-lite",
-        "gemini-flash-latest",
-        "gemini-2.0-flash",
-        "gemini-1.5-pro",
-        "gemini-1.5-flash"
-    ]
+            models_to_try = [
+            "gemini-1.5-flash",
+            "gemini-2.0-flash",
+            "gemini-1.5-pro"
+        ]
     
     last_error = ""
     for api_key in keys_to_try:
