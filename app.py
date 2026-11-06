@@ -3,6 +3,9 @@ import re
 import requests
 from flask import Flask, render_template, request, jsonify
 import fitz
+from dotenv import load_dotenv
+
+load_dotenv() # .env फाइल भए लोड गर्ने
 
 app = Flask(__name__)
 
@@ -130,10 +133,8 @@ def search():
     target = data.get("target", "")
     targets = data.get("targets", [])
     
-    # फोल्डर सर्चको लागि सामान्य queries
     queries = data.get("queries", [])
     
-    # निश्चित PDF सर्चको लागि छुट्टाछुट्टै फिल्डहरू
     dhara = (data.get("dhara") or "").strip()
     dafa = (data.get("dafa") or "").strip()
     niyam = (data.get("niyam") or "").strip()
@@ -148,7 +149,7 @@ def search():
     if nirdeshan: final_queries.append(f"निर्देशन {nirdeshan}")
     if anusuchi: final_queries.append(f"अनुसूची {anusuchi}")
     if general: final_queries.append(general)
-    if queries: final_queries.extend(queries) # पुरानो फोल्डर सर्चको लागि
+    if queries: final_queries.extend(queries)
     
     if not final_queries:
         return jsonify({"error": "खोज शब्द खाली छ। कृपया कुनै एउटा बक्समा लेख्नुहोस्।"}), 400
@@ -179,12 +180,13 @@ def chat():
         context = "\n".join(ctx_lines) if ctx_lines else "कुनै मिल्दो सामग्री भेटिएन।"
         prompt = f"तपाईं नेपाली कानुनी सहायक हुनुहुन्छ। तल दिइएको PDF सामग्रीको आधारमा प्रश्नको जवाफ दिनुहोस्।\n\nPDF सामग्री:\n{context}\n\nप्रश्न: {query_str}\n"
         
-                models_to_try = [
+        models_to_try = [
             "gemini-2.0-flash", 
             "gemini-1.5-flash", 
-            "gemini-1.5-flash-8b", 
-            "gemini-1.5-pro"
+            "gemini-1.5-pro", 
+            "gemini-1.5-flash-8b"
         ]
+        
         last_error = ""
         for model in models_to_try:
             try:
