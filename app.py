@@ -25,12 +25,10 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
     results = []
     norm_query = normalize_to_header_number(query)
     
-    # नम्बर सर्च हो कि टेक्स्ट सर्च छुट्याउने
     is_num_search = norm_query.endswith(".") and any(c in "०१२३४५६७८९" for c in norm_query)
     clean_q_text = re.sub(r'\s+', '', query)
     num_only = norm_query.replace(".", "")
 
-    # फोल्डर अनुसार व्याकरण (Prefix) छुट्याउने
     expected_prefix = "दफा"
     context_lower = folder_context.lower()
     if "संविधान" in context_lower: expected_prefix = "धारा"
@@ -47,16 +45,21 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
                 clean_line = line.strip()
                 if not clean_line: continue
                 
+                # यदि नम्बर सर्च हो भने
                 if is_num_search:
-                    # Regex प्रयोग गरेर नम्बर पछि डट, ब्राकेट वा स्पेस भए पनि चिन्ने
-                    if re.match(rf"^\s*{re.escape(num_only)}\s*[\.\)]\s*", clean_line):
+                    # लाइनको सुरुमा भएका सबै अदृश्य क्यारेक्टर र स्पेस हटाउने
+                    line_clean = re.sub(r'^[^\w\u0900-\u097F]+', '', clean_line)
+                    
+                    # ठ्याक्कै ३४. बाट सुरु भएको छ कि छैन जाँच्ने
+                    target_str = f"{num_only}."
+                    if line_clean.startswith(target_str):
                         results.append({
                             "page": page_num + 1,
                             "section": f"{expected_prefix} {num_only}",
                             "snippet": clean_line[:150]
                         })
                 else:
-                    # टेक्स्ट सर्च (जस्तै: टायल चेक) -> स्पेस हटाएर खोज्ने
+                    # टेक्स्ट सर्च (जस्तै: टायल चेक)
                     if clean_q_text in re.sub(r'\s+', '', clean_line):
                         results.append({
                             "page": page_num + 1,
@@ -113,7 +116,6 @@ def collect_results(queries, mode="all", target="", targets=[]):
             
             if pdf_data:
                 for q in queries:
-                    # folder_context पास गर्ने ताकि व्याकरण मिलोस्
                     matches = search_in_pdf_bytes(pdf_data, q, folder_context) 
                     if matches:
                         if not any(x['filename'] == f and x['matches'] == matches for x in out):
