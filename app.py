@@ -11,19 +11,31 @@ app = Flask(__name__)
 GITHUB_REPO = "barshapbp2026/any-pdf-"
 GITHUB_BRANCH = "main"
 
-def normalize_to_nepali_number(query):
-    """कुनै पनि नम्बरलाई नेपालीमा बदल्ने (जस्तै: 34 -> ३४)"""
+def normalize_to_header_number(query):
+    """कुनै पनि नम्बरलाई नेपालीमा बदलेर अन्त्यमा डट थप्ने (जस्तै: 34 -> ३४.)"""
     if not query: return ""
     nepali_map = str.maketrans("0123456789", "०१२३४५६७८९")
     q_nepali = query.translate(nepali_map)
     clean_q = re.sub(r'[^\d०-९]', '', q_nepali)
-    return clean_q
+    if clean_q:
+        return clean_q + "."
+    return query.strip()
 
-def search_in_pdf_bytes(pdf_bytes, query, max_results=30):
+def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
     results = []
-    norm_q = normalize_to_nepali_number(query)
-    is_num_search = bool(norm_q) and len(norm_q) > 0
+    norm_query = normalize_to_header_number(query)
+    
+    # नम्बर सर्च हो कि टेक्स्ट सर्च छुट्याउने
+    is_num_search = norm_query.endswith(".") and any(c in "०१२३४५६७८९" for c in norm_query)
     clean_q_text = re.sub(r'\s+', '', query)
+    num_only = norm_query.replace(".", "")
+
+    # फोल्डर अनुसार व्याकरण (Prefix) छुट्याउने
+    expected_prefix = "दफा"
+    context_lower = folder_context.lower()
+    if "संविधान" in context_lower: expected_prefix = "धारा"
+    elif "निर्देशिका" in context_lower: expected_prefix = "निर्देशन"
+    elif "नियम" in context_lower: expected_prefix = "नियम"
 
     try:
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
@@ -35,24 +47,28 @@ def search_in_pdf_bytes(pdf_bytes, query, max_results=30):
                 clean_line = line.strip()
                 if not clean_line: continue
                 
-                # PDF को टेक्स्टलाई पनि नेपालीमा बदलेर चेक गर्ने
-                nepali_line = clean_line.translate(str.maketrans("0123456789", "०१२३४५६७८९"))
-                clean_np_line = re.sub(r'\s+', '', nepali_line)
-
                 if is_num_search:
-                    # ३४. वा (३४) वा ३४) बाट सुरु हुन्छ कि
-                    if clean_np_line.startswith(norm_q + ".") or clean_np_line.startswith("(" + norm_q + ")") or clean_np_line.startswith(norm_q + ")"):
-                        results.append({"page": page_num + 1, "section": f"नम्बर {norm_q}", "snippet": clean_line[:150]})
+                    # Regex प्रयोग गरेर नम्बर पछि डट, ब्राकेट वा स्पेस भए पनि चिन्ने
+                    if re.match(rf"^\s*{re.escape(num_only)}\s*[\.\)]\s*", clean_line):
+                        results.append({
+                            "page": page_num + 1,
+                            "section": f"{expected_prefix} {num_only}",
+                            "snippet": clean_line[:150]
+                        })
                 else:
-                    # टेक्स्ट सर्च (जस्तै: टायल चेक)
-                    if clean_q_text in clean_np_line:
-                        results.append({"page": page_num + 1, "section": "हेडर (सन्दर्भ)", "snippet": clean_line[:150]})
+                    # टेक्स्ट सर्च (जस्तै: टायल चेक) -> स्पेस हटाएर खोज्ने
+                    if clean_q_text in re.sub(r'\s+', '', clean_line):
+                        results.append({
+                            "page": page_num + 1,
+                            "section": "सन्दर्भ",
+                            "snippet": clean_line[:150]
+                        })
                         
                 if len(results) >= max_results: break
             if len(results) >= max_results: break
         doc.close()
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"[search_in_pdf_bytes] Error: {e}")
     return results
 
 def get_github_pdfs():
@@ -82,25 +98,28 @@ def get_pdf_bytes_from_github(filepath):
 def collect_results(queries, mode="all", target="", targets=[]):
     all_files = get_github_pdfs()
     
-    # STRICT SCOPING LOGIC
     if mode == "specific" and target:
-        files_to_search = [target] # केवल छानिएको PDF
+        files_to_search = [target]
     elif mode in ["folder", "folders"] and targets:
         files_to_search = [f for f in all_files if any(f.startswith(t + "/") or f == t for t in targets)]
     else:
-        files_to_search = all_files # सबै PDF
+        files_to_search = all_files
 
     out = []
     for f in files_to_search:
         try:
             pdf_data = get_pdf_bytes_from_github(f)
+            folder_context = f.split('/')[0] if '/' in f else ""
+            
             if pdf_data:
                 for q in queries:
-                    matches = search_in_pdf_bytes(pdf_data, q)
+                    # folder_context पास गर्ने ताकि व्याकरण मिलोस्
+                    matches = search_in_pdf_bytes(pdf_data, q, folder_context) 
                     if matches:
-                        out.append({"filename": f, "matches": matches, "query": q})
-        except Exception: 
-            pass
+                        if not any(x['filename'] == f and x['matches'] == matches for x in out):
+                            out.append({"filename": f, "matches": matches, "query": q})
+        except Exception as e:
+            print(f"Error processing {f}: {e}")
     return out
 
 @app.route("/")
@@ -196,14 +215,15 @@ def chat():
     ctx_lines = []
     for g in results[:5]:
         for m in g["matches"][:6]:
-            ctx_lines.append("[PDF: " + g['filename'] + " | पृष्ठ " + str(m['page']) + " | " + str(m['section']) + "] " + m['snippet'])
+            sec = m["section"] or "सन्दर्भ"
+            ctx_lines.append(f"[PDF: {g['filename']} | पृष्ठ {m['page']} | {sec}] {m['snippet']}")
     context_str = "\n".join(ctx_lines) if ctx_lines else "कुनै मिल्दो सामग्री भेटिएन।"
     
     prompt = (
         "तपाईं नेपाली कानुनी सहायक हुनुहुन्छ। तल दिइएको PDF सामग्रीको आधारमा मात्र प्रश्नको जवाफ दिनुहोस्। "
         "बाहिरी ज्ञान (Internet) वा आफ्नो जानकारी प्रयोग गर्न पूर्ण रूपमा मनाही छ। "
         "यदि जवाफ दिइएको PDF सामग्रीमा छैन भने, 'माफ गर्नुहोस्, यो जानकारी दिइएको PDF मा भेटिएन।' भन्नुहोस्।\n\n"
-        "PDF सामग्री:\n" + context_str + "\n\nप्रश्न: " + query_str + "\n"
+        f"PDF सामग्री:\n{context_str}\n\nप्रश्न: {query_str}\n"
     )
     
     last_error = ""
@@ -221,7 +241,7 @@ def chat():
             
             for model in available_models:
                 try:
-                    url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + api_key
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
                     r = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=30)
                     if r.status_code == 200:
                         j = r.json()
@@ -232,7 +252,7 @@ def chat():
         except Exception as e:
             last_error = str(e)
                 
-    fallback_msg = "⚠️ (Gemini API समस्या: " + last_error + "। स्थानीय खोज नतिजा तल छ।)\n\n"
+    fallback_msg = f"⚠️ (Gemini API समस्या: {last_error}। स्थानीय खोज नतिजा तल छ।)\n\n"
     return jsonify({"answer": fallback_msg + "PDF हरूमा भेटिएका मिल्दा स्थानहरू तल देखाइएका छन्।", "results": results, "mode": "fallback"})
 
 if __name__ == "__main__":
