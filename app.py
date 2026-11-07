@@ -1,4 +1,3 @@
-
 import os
 import re
 import requests
@@ -210,17 +209,40 @@ def chat():
     
     results = collect_results(queries, mode, target, targets)
     
-    ctx_lines = []
-    for g in results[:5]:
-        for m in g["matches"][:6]:
-            sec = m["section"] or "सन्दर्भ"
-            ctx_lines.append(f"[PDF: {g['filename']} | पृष्ठ {m['page']} | {sec}] {m['snippet']}")
-    context_str = "\n".join(ctx_lines) if ctx_lines else "कुनै मिल्दो सामग्री भेटिएन।"
-    
+    # भेटिएका पेजहरूको पूरा टेक्स्ट (र अर्को पेज पनि, किनकि दफा पेज पार गर्न सक्छ) Gemini लाई पठाउने
+    ctx_parts = []
+    total_chars = 0
+    MAX_CHARS = 60000
+    for g in results[:4]:
+        pdf_data = get_pdf_bytes_from_github(g["filename"])
+        if not pdf_data:
+            continue
+        try:
+            doc = fitz.open(stream=pdf_data, filetype="pdf")
+        except Exception:
+            continue
+        seen = set()
+        for m in g["matches"][:3]:
+            for p in (m["page"], m["page"] + 1):
+                if p in seen or p > len(doc) or total_chars > MAX_CHARS:
+                    continue
+                seen.add(p)
+                txt = page_text_unicode(doc[p - 1]).strip()
+                total_chars += len(txt)
+                ctx_parts.append(f"===== [PDF: {g['filename']} | पृष्ठ {p} | {m['section']}] =====\n{txt}")
+        doc.close()
+    context_str = "\n\n".join(ctx_parts) if ctx_parts else "कुनै मिल्दो सामग्री भेटिएन।"
+
     prompt = (
-        "तपाईं नेपाली कानुनी सहायक हुनुहुन्छ। तल दिइएको PDF सामग्रीको आधारमा मात्र प्रश्नको जवाफ दिनुहोस्। "
-        "बाहिरी ज्ञान (Internet) वा आफ्नो जानकारी प्रयोग गर्न पूर्ण रूपमा मनाही छ। "
-        "यदि जवाफ दिइएको PDF सामग्रीमा छैन भने, 'माफ गर्नुहोस्, यो जानकारी दिइएको PDF मा भेटिएन।' भन्नुहोस्।\n\n"
+        "तपाईं नेपाली कानुनी सहायक हुनुहुन्छ। तल दिइएको PDF सामग्रीको आधारमा मात्र जवाफ दिनुहोस्; "
+        "बाहिरी ज्ञान प्रयोग नगर्नुहोस्।\n"
+        "जवाफ यस ढाँचामा दिनुहोस्:\n"
+        "1. **कानुन र दफा**: कुन ऐन/नियमावलीको कुन दफा/नियम/धारा हो, र PDF को पृष्ठ नम्बर।\n"
+        "2. **मूल व्यवस्था**: त्यो दफाले के भन्छ — मुख्य वाक्यहरू उद्धरण (\"...\") सहित, उपदफा (१), (२) ... अनुसार।\n"
+        "3. **सजिलो भाषामा अर्थ**: आम मानिसले बुझ्ने सरल नेपालीमा व्याख्या, सम्भव भए एउटा सानो उदाहरण।\n"
+        "4. **ध्यान दिनुपर्ने कुरा**: अपवाद, सर्त, म्याद, वा सम्बन्धित अरू दफा उल्लेख छ भने।\n"
+        "PDF टेक्स्टमा केही अक्षर बिग्रिएका हुन सक्छन् (जस्तै 'उपिफा' = 'उपदफा'); सही शब्द बुझेर लेख्नुहोस्।\n"
+        "जवाफ PDF मा छैन भने 'माफ गर्नुहोस्, यो जानकारी दिइएको PDF मा भेटिएन।' भन्नुहोस्।\n\n"
         f"PDF सामग्री:\n{context_str}\n\nप्रश्न: {query_str}\n"
     )
     
@@ -240,7 +262,7 @@ def chat():
             for model in available_models:
                 try:
                     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-                    r = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=30)
+                    r = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=90)
                     if r.status_code == 200:
                         j = r.json()
                         if "candidates" in j and len(j["candidates"]) > 0:
