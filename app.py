@@ -4,6 +4,7 @@ import requests
 from flask import Flask, render_template, request, jsonify
 import fitz
 from dotenv import load_dotenv
+from nepali_text import page_text_unicode, search_key
 
 load_dotenv() 
 app = Flask(__name__)
@@ -30,7 +31,7 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
             q_ascii = q_digits.translate(str.maketrans("०१२३४५६७८९", "0123456789"))
             
             for page_num in range(len(doc)):
-                page_text = doc[page_num].get_text("text")
+                page_text = page_text_unicode(doc[page_num])
                 
                 # टेक्स्टबाट सबै स्पेस र नयाँ लाइन हटाएर एकै लाइन बनाउने
                 page_clean = re.sub(r'\s+', '', page_text)
@@ -50,11 +51,11 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
                 if len(results) >= max_results: break
         else:
             # टेक्स्ट सर्च (जस्तै: टायल चेक)
-            clean_q = re.sub(r'\s+', '', query)
+            clean_q = search_key(query)
             for page_num in range(len(doc)):
-                page_text = doc[page_num].get_text("text")
+                page_text = page_text_unicode(doc[page_num])
                 for line in page_text.split('\n'):
-                    if clean_q in re.sub(r'\s+', '', line):
+                    if clean_q and clean_q in search_key(line):
                         results.append({
                             "page": page_num + 1,
                             "section": "सन्दर्भ",
