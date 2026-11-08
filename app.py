@@ -13,7 +13,7 @@ GITHUB_REPO = "barshapbp2026/any-pdf-"
 GITHUB_BRANCH = "main"
 
 def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
-    """Find a numbered main heading and its section in any PDF."""
+    """Audit all matching numbered headings and return the strongest single header."""
     results = []
     numeric_match = re.fullmatch(r"\s*([0-9०-९]+)\s*\.?\s*", query or "")
     expected_prefix = "दफा"
@@ -38,36 +38,111 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
                 r")\s*\.(?![0-9०-९])\s*(.*)$"
             )
             any_heading_pattern = re.compile(r"^\s*[०-९0-9]+\s*\.(?![०-९0-9])")
-            all_lines = []
-            for page_num in range(len(doc)):
-                for line in page_text_unicode(doc[page_num]).splitlines():
-                    clean_line = re.sub(r"(?<=[0-9०-९])\s+(?=\.)", "", line).strip()
-                    all_lines.append((page_num + 1, clean_line))
-
             candidates = []
-            for i, (page_num, line) in enumerate(all_lines):
-                match = target_pattern.match(line)
-                if not match:
-                    continue
-                section_lines = [line]
-                for _, following in all_lines[i + 1:]:
-                    if any_heading_pattern.match(following):
-                        break
-                    if following:
-                        section_lines.append(following)
-                section_text = " ".join(section_lines).strip()
-                candidates.append({
-                    "page": page_num,
-                    "section": f"{expected_prefix} {digits}",
-                    "snippet": (line or f"{digits}.")[:240],
-                    "highlight_text": section_text,
-                    "_section_length": len(section_text)
-                })
+
+            for page_num in range(len(doc)):
+                page = doc[page_num]
+                page_dict = page.get_text("dict")
+                drawings = page.get_drawings()
+                page_lines = []
+
+                for block in page_dict.get("blocks", []):
+                    for line in block.get("lines", []):
+                        spans = line.get("spans", [])
+                        line_text = "".join(sp.get("text", "") for sp in spans).strip()
+                        line_text = re.sub(r"(?<=[0-9०-९])\s+(?=\.)", "", line_text)
+                        if not line_text:
+                            continue
+                        line_bbox = fitz.Rect(line.get("bbox", (0, 0, 0, 0)))
+                        is_bold = any(
+                            (int(sp.get("flags", 0)) & 16) != 0
+                            or "bold" in (sp.get("font", "").lower())
+                            for sp in spans
+                        )
+                        is_underlined = False
+                        # Detect drawn underline strokes directly below the text line.
+                        for drawing in drawings:
+                            for item in drawing.get("items", []):
+                                if not item or item[0] not in ("l", "re"):
+                                    continue
+                                if item[0] == "l":
+                                    p1, p2 = item[1], item[2]
+                                    x0, x1 = sorted((p1.x, p2.x))
+                                    y0, y1 = sorted((p1.y, p2.y))
+                                    horizontal = abs(p1.y - p2.y) <= 1.8
+                                    near_baseline = line_bbox.y1 - 1 <= y0 <= line_bbox.y1 + 4
+                                    overlaps = x1 >= line_bbox.x0 and x0 <= line_bbox.x1
+                                    if horizontal and near_baseline and overlaps and (x1 - x0) >= min(8, line_bbox.width * 0.25):
+                                        is_underlined = True
+                                        break
+                                else:
+                                    rect = fitz.Rect(item[1])
+                                    near_baseline = line_bbox.y1 - 1 <= rect.y0 <= line_bbox.y1 + 4
+                                    overlaps = rect.x1 >= line_bbox.x0 and rect.x0 <= line_bbox.x1
+                                    if near_baseline and overlaps and rect.width >= min(8, line_bbox.width * 0.25) and rect.height <= 3:
+                                        is_underlined = True
+                                        break
+                            if is_underlined:
+                                break
+
+                        page_lines.append({
+                            "text": line_text,
+                            "spans": spans,
+                            "bold": is_bold,
+                            "underlined": is_underlined
+                        })
+
+                for i, line in enumerate(page_lines):
+                    match = target_pattern.match(line["text"])
+                    if not match:
+                        continue
+
+                    title_parts = []
+                    style_bold = line["bold"]
+                    style_underlined = line["underlined"]
+                    first_title = match.group(2).strip()
+                    if first_title:
+                        title_parts.append(first_title)
+                    else:
+                        # The number and its title are often extracted as separate lines.
+                        for following in page_lines[i + 1:]:
+                            if any_heading_pattern.match(following["text"]):
+                                break
+                            if following["text"]:
+                                title_parts.append(following["text"])
+                                style_bold = style_bold or following["bold"]
+                                style_underlined = style_underlined or following["underlined"]
+                                if len(" ".join(title_parts)) >= 500:
+                                    break
+                            if title_parts:
+                                break
+
+                    header_title = re.sub(r"\s+", " ", " ".join(title_parts)).strip()
+                    if not header_title:
+                        continue
+
+                    header_text = f"{digits}. {header_title}"
+                    candidates.append({
+                        "page": page_num + 1,
+                        "section": f"{expected_prefix} {digits}",
+                        "snippet": header_text[:500],
+                        "header_text": header_text,
+                        "bold": bool(style_bold),
+                        "underlined": bool(style_underlined),
+                        "header_length": len(header_title)
+                    })
 
             if candidates:
-                longest = max(candidates, key=lambda item: item["_section_length"])
-                longest.pop("_section_length", None)
-                results.append(longest)
+                # First prefer bold/underlined headings; if none exist, choose
+                # the candidate with the longest actual header title.
+                styled = [c for c in candidates if c["bold"] or c["underlined"]]
+                pool = styled if styled else candidates
+                chosen = max(
+                    pool,
+                    key=lambda c: (c["header_length"], c["bold"], c["underlined"])
+                )
+                chosen.pop("header_length", None)
+                results.append(chosen)
         else:
             clean_q = search_key(query)
             for page_num in range(len(doc)):
