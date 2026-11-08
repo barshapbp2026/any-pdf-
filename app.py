@@ -13,48 +13,43 @@ GITHUB_REPO = "barshapbp2026/any-pdf-"
 GITHUB_BRANCH = "main"
 
 def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
+    """Search numbered legal headings strictly; ordinary text remains substring search."""
     results = []
-    q_digits = re.sub(r'[^\d०-९]', '', query.strip())
-    
+    numeric_match = re.fullmatch(r"\s*([0-9०-९]+)\.?\s*", query or "")
     expected_prefix = "दफा"
     context_lower = folder_context.lower()
-    if "संविधान" in context_lower: expected_prefix = "धारा"
-    elif "निर्देशिका" in context_lower: expected_prefix = "निर्देशन"
-    elif "नियम" in context_lower: expected_prefix = "नियम"
+    if "संविधान" in context_lower:
+        expected_prefix = "धारा"
+    elif "निर्देशिका" in context_lower:
+        expected_prefix = "निर्देशन"
+    elif "नियम" in context_lower:
+        expected_prefix = "नियम"
 
     try:
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        
-        if q_digits:
-            # अंग्रेजी र नेपाली दुवै अंकको भेरिएसन बनाउने
-            q_nep = q_digits.translate(str.maketrans("0123456789", "०१२३४५६७८९"))
-            q_ascii = q_digits.translate(str.maketrans("०१२३४५६७८९", "0123456789"))
-            
+        if numeric_match:
+            digits = numeric_match.group(1).translate(str.maketrans(
+                "0123456789", "०१२३४५६७८९"
+            ))
+            # Only line-leading "५." headings; excludes "(५)", "५)" and mentions in prose.
+            heading_pattern = re.compile(r"^\s*" + re.escape(digits) + r"\.(?![0-9०-९])")
             for page_num in range(len(doc)):
                 page_text = page_text_unicode(doc[page_num])
-                
-                # टेक्स्टबाट सबै स्पेस र नयाँ लाइन हटाएर एकै लाइन बनाउने
-                page_clean = re.sub(r'\s+', '', page_text)
-                
-                # यदि '३४.' वा '34.' पेजमा कतै छ भने
-                if f"{q_nep}." in page_clean or f"{q_ascii}." in page_clean or f"{q_nep})" in page_clean or f"{q_ascii})" in page_clean:
-                    # स्निपेट (झलक) निकाल्नको लागि लाइन-बाई-लाइन खोज्ने
-                    for line in page_text.split('\n'):
-                        clean_line = re.sub(r'\s+', '', line)
-                        if f"{q_nep}." in clean_line or f"{q_ascii}." in clean_line or f"{q_nep})" in clean_line or f"{q_ascii})" in clean_line:
-                            results.append({
-                                "page": page_num + 1,
-                                "section": f"{expected_prefix} {q_nep}",
-                                "snippet": line.strip()[:200]
-                            })
-                            break # यो पेजको लागि एउटा मात्र नतिजा
-                if len(results) >= max_results: break
+                for line in page_text.splitlines():
+                    if heading_pattern.match(line):
+                        results.append({
+                            "page": page_num + 1,
+                            "section": f"{expected_prefix} {digits}",
+                            "snippet": line.strip()[:200]
+                        })
+                        break
+                if len(results) >= max_results:
+                    break
         else:
-            # टेक्स्ट सर्च (जस्तै: टायल चेक)
             clean_q = search_key(query)
             for page_num in range(len(doc)):
                 page_text = page_text_unicode(doc[page_num])
-                for line in page_text.split('\n'):
+                for line in page_text.splitlines():
                     if clean_q and clean_q in search_key(line):
                         results.append({
                             "page": page_num + 1,
@@ -62,8 +57,8 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
                             "snippet": line.strip()[:200]
                         })
                         break
-                if len(results) >= max_results: break
-                
+                if len(results) >= max_results:
+                    break
         doc.close()
     except Exception as e:
         print(f"[search_in_pdf_bytes] Error: {e}")
