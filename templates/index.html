@@ -9,7 +9,7 @@
 <title>नेपाली कानुनी PDF सहायक</title>
 <style>
   *{box-sizing:border-box}
-  body{font-family:'Kalimati','Mangal','Noto Sans Devanagari','Noto Serif Devanagari','Mukta','Hind','Tiro Devanagari Hindi','Martel','Khand','Eczar','Arya','Amita','Yatra One','Baloo 2',Arial,sans-serif;margin:0;background:#f5f7fa;color:#1f2937}
+  body{font-family:'Mukta','Noto Sans Devanagari','Hind','Tiro Devanagari Hindi','Kalimati','Mangal','Noto Serif Devanagari','Martel','Khand','Eczar','Arya','Amita','Yatra One','Baloo 2',Arial,sans-serif;margin:0;background:#f5f7fa;color:#1f2937}
   header{background:linear-gradient(135deg,#1e3a8a,#3b82f6);color:#fff;padding:14px 24px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;box-shadow:0 2px 10px rgba(0,0,0,.15)}
   header h1{margin:0;font-size:18px;font-weight:600}
   header input{font-family:Consolas, monospace !important;padding:9px 12px;border-radius:6px;border:none;width:250px;font-size:13px;color:#333}
@@ -25,11 +25,11 @@
   .search-box{border:2px solid #e5e7eb;border-radius:8px;padding:14px;background:#f9fafb;}
   .search-box h3{margin:0 0 10px;font-size:14px;color:#374151}
   .result-item{border-left:4px solid #3b82f6;background:#f8fafc;padding:12px 14px;margin:10px 0;border-radius:6px}
-  .result-item .meta{font-family:'Kalimati','Mangal','Noto Sans Devanagari','Noto Serif Devanagari',sans-serif;font-size:12px;color:#6b7280;margin-bottom:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .result-item .meta{font-family:'Mukta','Noto Sans Devanagari','Hind','Kalimati','Mangal',sans-serif;font-size:13px;color:#6b7280;margin-bottom:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   .result-item .meta strong{color:#1e3a8a}
-  .result-item .snippet{font-family:'Kalimati','Mangal','Noto Sans Devanagari','Noto Serif Devanagari',sans-serif;font-size:14px;line-height:1.8;color:#1f2937;font-weight:500;}
+  .result-item .snippet{font-family:'Mukta','Noto Sans Devanagari','Hind','Kalimati','Mangal','Noto Serif Devanagari',sans-serif;font-size:16px;line-height:1.95;color:#172033;font-weight:500;}
   .pdf-group{margin-bottom:16px}
-  .pdf-group h4{font-family:'Kalimati','Mangal','Noto Sans Devanagari','Noto Serif Devanagari',sans-serif;margin:0 0 8px;color:#374151;font-size:14px}
+  .pdf-group h4{font-family:'Mukta','Noto Sans Devanagari','Hind','Kalimati','Mangal',sans-serif;margin:0 0 8px;color:#374151;font-size:14px}
   .badge{display:inline-block;background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600}
   .answer{background:#ecfdf5;border-left:4px solid #10b981;padding:14px;border-radius:6px;white-space:pre-wrap;line-height:1.7;font-size:14px}
   .empty{color:#9ca3af;font-style:italic;padding:20px;text-align:center}
@@ -193,7 +193,7 @@ function getPdfPageViewerUrl(filepath, page, snippet) {
   const encodedPath = filepath.split('/').map(encodeURIComponent).join('/');
   const rawUrl = `https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}/pdfs/${encodedPath}`;
   const viewer = 'https://mozilla.github.io/pdf.js/web/viewer.html';
-  const searchText = String(snippet || '').trim().slice(0, 180);
+  const searchText = String(snippet || '').replace(/\\s+/g, ' ').trim().slice(0, 4500);
   // phrase=true makes PDF.js highlight the complete heading phrase, not each common word separately.
   const hash = `page=${Math.max(1, Number(page) || 1)}&zoom=page-fit&search=${encodeURIComponent(searchText)}&phrase=true`;
   return `${viewer}?file=${encodeURIComponent(rawUrl)}#${hash}`;
@@ -443,7 +443,7 @@ function renderResults(results, query) {
     html += `<div class="pdf-group"><h4>📄 ${esc(g.filename)}</h4>`;
     g.matches.forEach(m => {
       const sec = m.section ? `<span class="badge">${esc(m.section)}</span>` : `<span class="badge">सन्दर्भ अज्ञात</span>`;
-      const pageUrl = getPdfPageViewerUrl(g.filename, m.page, m.snippet);
+      const pageUrl = getPdfPageViewerUrl(g.filename, m.page, m.highlight_text || m.snippet);
       html += `<div class="result-item"><div class="meta">${sec} पृष्ठ <strong>${m.page}</strong><a href="${pageUrl}" target="_blank" rel="noopener" style="margin-left:auto"><button class="small">पृष्ठ हाइलाइटसहित देखाउनुहोस् →</button></a></div><div class="snippet">${esc(m.snippet)}</div></div>`;
     });
     html += '</div>';
