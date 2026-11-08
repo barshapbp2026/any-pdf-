@@ -101,7 +101,54 @@ def get_pdf_bytes_from_github(filepath):
         pass
     return None
 
-def collect_results(queries, mode="all", target="", targets=[]):
+def search_anusuchi_tables(pdf_bytes, query, max_results=30):
+    """Find matching अनुसूची headings and return pages containing their tables."""
+    results = []
+    number_match = re.search(r"([0-9०-९]{1,3})", query or "")
+    if not number_match:
+        return results
+    number = number_match.group(1).translate(str.maketrans("0123456789", "०१२३४५६७८९"))
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        heading_re = re.compile(r"अनुसूची\s*(?:[-–:]?\s*)?" + re.escape(number) + r"(?![०-९0-9])")
+        for page_no in range(len(doc)):
+            page = doc[page_no]
+            text = page_text_unicode(page)
+            if not heading_re.search(text):
+                continue
+            table_found = False
+            table_text = ""
+            # Prefer PyMuPDF's table detector when available.
+            try:
+                finder = page.find_tables()
+                if finder.tables:
+                    table_found = True
+                    table_text = "\n".join(" | ".join(str(c or "") for c in row)
+                                           for table in finder.tables for row in (table.extract() or []))
+            except Exception:
+                pass
+            # Fallback: a schedule page often has aligned columns / repeated cell separators.
+            if not table_found:
+                lines = [x.strip() for x in text.splitlines() if x.strip()]
+                table_lines = [x for x in lines if len(re.findall(r"\s{2,}|\t|\|", x)) >= 1]
+                if len(table_lines) >= 2:
+                    table_found = True
+                    table_text = "\n".join(table_lines)
+            if table_found:
+                results.append({
+                    "page": page_no + 1,
+                    "section": "अनुसूची " + number,
+                    "snippet": ("अनुसूची " + number + " — तालिका"),
+                    "highlight_text": table_text[:4000]
+                })
+                if len(results) >= max_results:
+                    break
+        doc.close()
+    except Exception as e:
+        print(f"[search_anusuchi_tables] Error: {e}")
+    return results
+
+def collect_results(queries, mode="all", target="", targets=[], anusuchi_query=""):
     all_files = get_github_pdfs()
     
     if mode == "specific" and target:
@@ -119,7 +166,9 @@ def collect_results(queries, mode="all", target="", targets=[]):
             
             if pdf_data:
                 for q in queries:
-                    matches = search_in_pdf_bytes(pdf_data, q, folder_context) 
+                    matches = (search_anusuchi_tables(pdf_data, anusuchi_query)
+                               if anusuchi_query and q == anusuchi_query
+                               else search_in_pdf_bytes(pdf_data, q, folder_context)) 
                     if matches:
                         if not any(x['filename'] == f and x['matches'] == matches for x in out):
                             out.append({"filename": f, "matches": matches, "query": q})
@@ -174,6 +223,7 @@ def search():
     nirdeshan = (data.get("nirdeshan") or "").strip()
     anusuchi = (data.get("anusuchi") or "").strip()
     general = (data.get("general") or "").strip()
+    anusuchi_query = anusuchi
     queries = data.get("queries", [])
     
     final_queries = []
@@ -186,7 +236,7 @@ def search():
     if not final_queries:
         return jsonify({"error": "खोज शब्द खाली छ।"}), 400
         
-    results = collect_results(final_queries, mode, target, targets)
+    results = collect_results(final_queries, mode, target, targets, anusuchi_query)
     return jsonify({"results": results})
 
 @app.route("/chat", methods=["POST"])
