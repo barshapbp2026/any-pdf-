@@ -85,14 +85,18 @@ def page_text_unicode(page) -> str:
 
 _NEP_DIGITS = str.maketrans("0123456789", "०१२३४५६७८९")
 # खोजका लागि हटाउने: स्पेस, ZWJ/ZWNJ, हलन्त, सबै मात्रा, चन्द्रबिन्दु/शिरबिन्दु, नुक्ता
-_STRIP = re.compile(r"[\s\u200b-\u200d\u094d\u093e-\u094c\u0900-\u0903\u093c\u0962\u0963]+")
-# उच्चारण मिल्ने अक्षरहरू एउटै बनाउने (स/श/ष, ब/व, ङ/न ...)
-_FOLD = str.maketrans({"श": "स", "ष": "स", "व": "ब", "ङ": "न", "ञ": "न", "ण": "न",
-                        "ई": "इ", "ऊ": "उ", "ऐ": "ए", "औ": "ओ", "आ": "अ"})
+# Remove whitespace, zero-width controls and punctuation, but KEEP vowel signs.
+_STRIP = re.compile(r"[\s\u200b-\u200d\u0964\u0965,;:!?।॥()\[\]{}\"'“”‘’–—-]+")
+_FOLD = str.maketrans({
+    "श": "स", "ष": "स", "व": "ब", "ङ": "न", "ञ": "न", "ण": "न",
+    "ई": "इ", "ी": "ि", "ऊ": "उ", "ू": "ु",
+    "ऐ": "ए", "ै": "े", "औ": "ओ", "ौ": "ो", "आ": "अ",
+    "ँ": "ं", "़": None
+})
 
 
 def search_key(text: str) -> str:
-    """लचिलो खोजको लागि: 'सं शोधन', 'संसोधन', 'संशोधन' सबै एउटै हुन्छन्।"""
+    """Nepali search normalization: consonant variants, vowel length and Unicode variants."""
     t = unicodedata.normalize("NFC", text or "").lower().translate(_NEP_DIGITS)
     t = _STRIP.sub("", t)
     return t.translate(_FOLD)
