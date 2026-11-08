@@ -191,6 +191,39 @@ def serve_pdf(filepath):
         return pdf_data, 200, {'Content-Type': 'application/pdf'}
     return "PDF File not found", 404
 
+@app.route("/pdf-highlight/<path:filepath>")
+def serve_pdf_with_header_highlight(filepath):
+    """Return the requested PDF with only its matching heading highlighted dark red."""
+    pdf_data = get_pdf_bytes_from_github(filepath)
+    if not pdf_data:
+        return "PDF File not found", 404
+
+    page_number = request.args.get("page", default=1, type=int)
+    heading = (request.args.get("snippet") or "").splitlines()[0].strip()[:240]
+    try:
+        doc = fitz.open(stream=pdf_data, filetype="pdf")
+        if page_number < 1 or page_number > len(doc):
+            doc.close()
+            return "Invalid PDF page", 400
+
+        if heading:
+            page = doc[page_number - 1]
+            # Search only the result's heading line; never highlight the section body.
+            matches = page.search_for(heading)
+            if matches:
+                annotation = page.add_highlight_annot(matches)
+                annotation.set_colors(stroke=(0.55, 0.0, 0.0))
+                annotation.set_opacity(0.55)
+                annotation.update()
+
+        output = doc.tobytes()
+        doc.close()
+        return output, 200, {"Content-Type": "application/pdf"}
+    except Exception as e:
+        print(f"[serve_pdf_with_header_highlight] Error: {e}")
+        return "Could not prepare highlighted PDF", 500
+
+
 @app.route("/check_api_key", methods=["POST"])
 def check_api_key():
     data = request.get_json() or {}
