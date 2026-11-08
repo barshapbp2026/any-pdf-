@@ -261,7 +261,8 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
                         "bold": bool(style_bold),
                         "underlined": bool(style_underlined),
                         "header_length": len(header_title),
-                        "number_value": int(ascii_digits)
+                        "number_value": int(ascii_digits),
+                        "heading_order": next((idx for idx, entry in enumerate(document_heading_numbers) if entry[1] == page_num and entry[2] == i), -1)
                     })
 
             # Score whether the target heading follows N-1 and precedes N+1
@@ -269,15 +270,17 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
             for candidate in candidates:
                 try:
                     target_num = int(ascii_digits)
-                    positions = [i for i, item in enumerate(document_heading_numbers)
-                                 if item[0] == target_num]
-                    best_sequence = 0
-                    for pos in positions:
+                    pos = int(candidate.get("heading_order", -1))
+                    if pos >= 0:
                         prev_num = document_heading_numbers[pos - 1][0] if pos > 0 else None
                         next_num = document_heading_numbers[pos + 1][0] if pos + 1 < len(document_heading_numbers) else None
-                        score = (1 if prev_num == target_num - 1 else 0) + (1 if next_num == target_num + 1 else 0)
-                        best_sequence = max(best_sequence, score)
-                    candidate["sequence_score"] = best_sequence
+                        candidate["sequence_score"] = (
+                            (1 if prev_num == target_num - 1 else 0) +
+                            (1 if next_num == target_num + 1 else 0)
+                        )
+                    else:
+                        candidate["sequence_score"] = 0
+                    candidate.pop("heading_order", None)
                 except Exception:
                     candidate["sequence_score"] = 0
 
