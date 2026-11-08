@@ -179,8 +179,8 @@ function getPdfViewerUrl(filepath) {
 function getPdfPageViewerUrl(filepath, page, snippet) {
   const encodedPath = filepath.split('/').map(encodeURIComponent).join('/');
   const viewer = 'https://mozilla.github.io/pdf.js/web/viewer.html';
-  // The server highlights only this heading in dark red; no PDF.js text search is used.
-  const headingOnly = String(snippet || '').split(/\r?\n/)[0].replace(/\s+/g, ' ').trim().slice(0, 240);
+  // Pass the exact result heading to the backend; it highlights only its number-dot line.
+  const headingOnly = String(snippet || '').split(/\r?\n/)[0].trim().slice(0, 240);
   const highlightedPdf = window.location.origin + '/pdf-highlight/' + encodedPath
     + '?page=' + Math.max(1, Number(page) || 1)
     + '&snippet=' + encodeURIComponent(headingOnly);
