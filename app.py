@@ -5,7 +5,7 @@ import requests
 from flask import Flask, render_template, request, jsonify
 import fitz
 from dotenv import load_dotenv
-from nepali_text import page_text_unicode, search_key
+from nepali_text import (page_text_unicode, search_key, convert_preeti, is_legacy_font, _DEVA, _URL)
 
 load_dotenv() 
 app = Flask(__name__)
