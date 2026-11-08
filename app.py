@@ -145,14 +145,14 @@ def extract_header_lines(page):
     for block in data.get("blocks", []):
         for line in block.get("lines", []):
             spans = line.get("spans", [])
-            value = re.sub(r"\\s+", " ", "".join(s.get("text", "") for s in spans)).strip()
+            value = re.sub(r"\s+", " ", "".join(s.get("text", "") for s in spans)).strip()
             if not value:
                 continue
             size = max((float(s.get("size", 0) or 0) for s in spans), default=0)
             if size > 0:
                 sizes.append(size)
             bold = any((int(s.get("flags", 0)) & 16) != 0 or "bold" in s.get("font", "").lower() for s in spans)
-            numbered = bool(re.match(r"^\\s*(?:[०-९0-9]+\\s*[.)।:-]|भाग\\s*[०-९0-9]+|परिच्छेद\\s*[०-९0-9]+)", value))
+            numbered = bool(re.match(r"^\s*(?:[०-९0-9]+\s*[.)।:-]|भाग\s*[०-९0-9]+|परिच्छेद\s*[०-९0-9]+)", value))
             raw_lines.append({"text": value, "size": size, "bold": bold, "numbered": numbered})
     if not raw_lines:
         return []
@@ -165,11 +165,11 @@ def extract_header_lines(page):
             continue
         if not (item["numbered"] or item["bold"] or is_large):
             continue
-        if re.match(r"^\\s*[०-९0-9]+\\s*[.)।:-]?\\s*$", value) and i + 1 < len(raw_lines):
+        if re.match(r"^\s*[०-९0-9]+\s*[.)।:-]?\s*$", value) and i + 1 < len(raw_lines):
             nxt = raw_lines[i + 1]["text"]
             if len(nxt) <= 180:
                 value = value + " " + nxt
-        key = re.sub(r"\\s+", " ", value).strip()
+        key = re.sub(r"\s+", " ", value).strip()
         if key not in seen:
             seen.add(key)
             output.append({"header_text": key, "bold": bool(item["bold"]), "underlined": False})
