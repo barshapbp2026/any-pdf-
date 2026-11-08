@@ -98,5 +98,7 @@ _FOLD = str.maketrans({
 def search_key(text: str) -> str:
     """Nepali search normalization: consonant variants, vowel length and Unicode variants."""
     t = unicodedata.normalize("NFC", text or "").lower().translate(_NEP_DIGITS)
+    # Common PDF font/OCR extraction error: अनुसूची is sometimes extracted as अिुसूची.
+    t = t.replace("अिुसूची", "अनुसूची")
     t = _STRIP.sub("", t)
     return t.translate(_FOLD)
