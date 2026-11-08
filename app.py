@@ -164,6 +164,7 @@ def extract_header_lines(page):
                 sizes.append(size)
             bold = any((int(s.get("flags", 0)) & 16) != 0 or "bold" in s.get("font", "").lower() for s in spans)
             clean_heading = value.lstrip("\uf0aa\uf076\uf077\uf0a7")
+            value = clean_heading
             numbered = bool(re.match(
                 r"^\s*(?:(?:धारा|दफा|नियम|अनुसूची|भाग|परिच्छेद)\s*[०-९0-9]+|"
                 r"[०-९0-9]+\s*[क-ह]?\s*\.(?![०-९0-9])",
@@ -264,6 +265,7 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30, all
                         spans = line.get("spans", [])
                         line_text = "".join(sp.get("text", "") for sp in spans).strip()
                         line_text = re.sub(r"(?<=[0-9०-९])\s+(?=\.)", "", line_text)
+                        line_text = line_text.lstrip("\uf0aa\uf076\uf077\uf0a7").strip()
                         if not line_text:
                             continue
                         line_bbox = fitz.Rect(line.get("bbox", (0, 0, 0, 0)))
@@ -725,6 +727,7 @@ def serve_pdf_with_header_highlight(filepath):
             for block in text_dict.get("blocks", []):
                 for line in block.get("lines", []):
                     line_text = "".join(span.get("text", "") for span in line.get("spans", [])).strip()
+                    line_text = line_text.lstrip("\uf0aa\uf076\uf077\uf0a7").strip()
                     # Some PDFs place the dot in a separate span with a space.
                     line_text = re.sub(r"(?<=[0-9०-९])\s+(?=\.)", "", line_text)
                     line_match = re.match(r"^\s*([0-9०-९]+)\s*\.(?![0-9०-९])", line_text)
