@@ -388,8 +388,7 @@ async function doSearch(type) {
     $('#input-niyam').value = niyam;
     const nirdeshan = normalizeNumberOnSearch($('#input-nirdeshan').value);
     $('#input-nirdeshan').value = nirdeshan;
-    const anusuchi = normalizeNumberOnSearch($('#input-anusuchi').value);
-    $('#input-anusuchi').value = anusuchi;
+    const anusuchi = $('#input-anusuchi').value.trim();
     const general = $('#input-general').value.trim();
     
     if (!dhara && !dafa && !niyam && !nirdeshan && !anusuchi && !general) {
