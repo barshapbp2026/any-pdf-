@@ -178,12 +178,14 @@ function getPdfViewerUrl(filepath) {
 
 function getPdfPageViewerUrl(filepath, page, snippet) {
   const encodedPath = filepath.split('/').map(encodeURIComponent).join('/');
-  const rawUrl = 'https://raw.githubusercontent.com/' + GITHUB_REPO + '/' + GITHUB_BRANCH + '/pdfs/' + encodedPath;
   const viewer = 'https://mozilla.github.io/pdf.js/web/viewer.html';
-  // Search only the main heading line, never the body/whole section.
-  const headingOnly = String(snippet || '').split(/\r?\n/)[0].replace(/\s+/g, ' ').trim().slice(0, 180);
-  const hash = 'page=' + Math.max(1, Number(page) || 1) + '&zoom=page-fit&search=' + encodeURIComponent(headingOnly) + '&phrase=true';
-  return viewer + '?file=' + encodeURIComponent(rawUrl) + '#' + hash;
+  // The server highlights only this heading in dark red; no PDF.js text search is used.
+  const headingOnly = String(snippet || '').split(/\r?\n/)[0].replace(/\s+/g, ' ').trim().slice(0, 240);
+  const highlightedPdf = window.location.origin + '/pdf-highlight/' + encodedPath
+    + '?page=' + Math.max(1, Number(page) || 1)
+    + '&snippet=' + encodeURIComponent(headingOnly);
+  const hash = 'page=' + Math.max(1, Number(page) || 1) + '&zoom=page-fit';
+  return viewer + '?file=' + encodeURIComponent(highlightedPdf) + '#' + hash;
 }
 function getDownloadUrl(filepath) {
   const encodedPath = filepath.split('/').map(encodeURIComponent).join('/');
@@ -443,7 +445,7 @@ function renderResults(results, query) {
     g.matches.forEach(m => {
       const sec = m.section ? `<span class="badge">${esc(m.section)}</span>` : `<span class="badge">सन्दर्भ अज्ञात</span>`;
       const pageUrl = getPdfPageViewerUrl(g.filename, m.page, m.snippet);
-      html += `<div class="result-item"><div class="meta">${sec} पृष्ठ <strong>${m.page}</strong><a href="${pageUrl}" target="_blank" rel="noopener" style="margin-left:auto"><button class="small">पृष्ठ हाइलाइटसहित देखाउनुहोस् →</button></a></div><div class="snippet">${esc(m.snippet)}</div></div>`;
+      html += `<div class="result-item"><div class="meta">${sec} पृष्ठ <strong>${m.page}</strong><a href="${pageUrl}" target="_blank" rel="noopener" style="margin-left:auto"><button class="small">गाढा रातो हेडर हाइलाइटसहित देखाउनुहोस् →</button></a></div><div class="snippet">${esc(m.snippet)}</div></div>`;
     });
     html += '</div>';
   });
