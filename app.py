@@ -13,9 +13,9 @@ GITHUB_REPO = "barshapbp2026/any-pdf-"
 GITHUB_BRANCH = "main"
 
 def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
-    """Numeric search returns the complete numbered section up to the next numbered heading."""
+    """Find a numbered main heading and its section in any PDF."""
     results = []
-    numeric_match = re.fullmatch(r"\s*([0-9०-९]+)\.?\s*", query or "")
+    numeric_match = re.fullmatch(r"\\s*([0-9०-९]+)\\s*\\.?\\s*", query or "")
     expected_prefix = "दफा"
     context_lower = folder_context.lower()
     if "संविधान" in context_lower:
@@ -28,37 +28,60 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
     try:
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         if numeric_match:
-            digits = numeric_match.group(1).translate(str.maketrans("0123456789", "०१२३४५६७८९"))
+            raw_digits = numeric_match.group(1)
+            digit_map = str.maketrans("0123456789", "०१२३४५६७८९")
+            digits = raw_digits.translate(digit_map)
             ascii_digits = digits.translate(str.maketrans("०१२३४५६७८९", "0123456789"))
-            target_pattern = re.compile(r"^\s*(?:" + re.escape(digits) + r"|" +
-                                        re.escape(ascii_digits) + r")\.(?![0-9०-९])\s*(.*)$")
-            any_heading_pattern = re.compile(r"^\s*[०-९0-9]{1,3}\.(?![०-९0-9])\s*\S")
+            number_options = {digits, ascii_digits}
+            target_pattern = re.compile(
+                r"^\\s*(" + "|".join(re.escape(x) for x in number_options) +
+                r")\\s*\\.(?![0-9०-९])\\s*(.*)$"
+            )
+            any_heading_pattern = re.compile(r"^\\s*[०-९0-9]+\\s*\\.(?![०-९0-9])")
             all_lines = []
             for page_num in range(len(doc)):
-                for line in page_text_unicode(doc[page_num]).splitlines():
-                    all_lines.append((page_num + 1, line.strip()))
+                page_text = page_text_unicode(doc[page_num])
+                for line in page_text.splitlines():
+                    # PDFs sometimes place a space between the section number and its dot.
+                    clean_line = re.sub(r"(?<=[0-9०-९])\\s+(?=\\.)", "", line).strip()
+                    all_lines.append((page_num + 1, clean_line))
+
             candidates = []
             for i, (page_num, line) in enumerate(all_lines):
                 match = target_pattern.match(line)
-                if not match or len(match.group(1).strip()) < 3:
+                if not match:
                     continue
-                # Extract this heading and its body until the next numbered main heading.
-                section_lines = [line]
+                heading_body = match.group(2).strip()
+                section_lines = [line] if line else []
+                if heading_body:
+                    section_lines = [line]
+                else:
+                    section_lines = [line]
+                    # Some documents put the heading text on the line after "N."
+                    for _, following in all_lines[i + 1:]:
+                        if not following:
+                            continue
+                        if any_heading_pattern.match(following):
+                            break
+                        section_lines.append(following)
+                        if len(" ".join(section_lines)) > 240:
+                            break
+
                 for _, following in all_lines[i + 1:]:
                     if any_heading_pattern.match(following):
                         break
                     if following:
                         section_lines.append(following)
-                section_text = " ".join(section_lines)
+
+                section_text = " ".join(section_lines).strip()
                 candidates.append({
                     "page": page_num,
                     "section": f"{expected_prefix} {digits}",
-                    "snippet": line[:240],
+                    "snippet": (line or f"{digits}.")[:240],
                     "highlight_text": section_text,
                     "_section_length": len(section_text)
                 })
-            # Repeated references can exist; choose the occurrence with the most
-            # text before the next main numbered heading (e.g. २१. to २२.).
+
             if candidates:
                 longest = max(candidates, key=lambda item: item["_section_length"])
                 longest.pop("_section_length", None)
