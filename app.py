@@ -12,6 +12,125 @@ app = Flask(__name__)
 GITHUB_REPO = "barshapbp2026/any-pdf-"
 GITHUB_BRANCH = "main"
 
+def _ocr_numbered_headers(page, page_num, target_pattern, any_heading_pattern, digits, expected_prefix):
+    """OCR fallback for scanned/image-only PDF pages, with visual style hints."""
+    try:
+        import pytesseract
+        from PIL import Image
+        pix = page.get_pixmap(matrix=fitz.Matrix(1.8, 1.8), alpha=False)
+        image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        try:
+            ocr = pytesseract.image_to_data(
+                image, lang="nep+eng", config="--psm 6",
+                output_type=pytesseract.Output.DICT
+            )
+        except Exception:
+            # If Nepali traineddata is unavailable, still attempt English digits/text.
+            ocr = pytesseract.image_to_data(
+                image, lang="eng", config="--psm 6",
+                output_type=pytesseract.Output.DICT
+            )
+
+        grouped = {}
+        count = len(ocr.get("text", []))
+        for idx in range(count):
+            word = (ocr["text"][idx] or "").strip()
+            if not word:
+                continue
+            key = (
+                ocr.get("block_num", [0] * count)[idx],
+                ocr.get("par_num", [0] * count)[idx],
+                ocr.get("line_num", [0] * count)[idx]
+            )
+            grouped.setdefault(key, []).append({
+                "text": word,
+                "left": int(ocr["left"][idx]),
+                "top": int(ocr["top"][idx]),
+                "width": int(ocr["width"][idx]),
+                "height": int(ocr["height"][idx]),
+                "conf": float(ocr.get("conf", ["0"] * count)[idx] or 0)
+            })
+
+        lines = []
+        for words in grouped.values():
+            words.sort(key=lambda w: w["left"])
+            text = " ".join(w["text"] for w in words)
+            # Tesseract may output Devanagari digits or ASCII digits.
+            text = re.sub(r"(?<=[0-9०-९])\s+(?=\.)", "", text).strip()
+            if not text:
+                continue
+            x0 = min(w["left"] for w in words)
+            y0 = min(w["top"] for w in words)
+            x1 = max(w["left"] + w["width"] for w in words)
+            y1 = max(w["top"] + w["height"] for w in words)
+
+            # Estimate boldness from ink density inside the OCR text crop.
+            crop = image.convert("L").crop((x0, y0, x1, y1))
+            pixels = list(crop.getdata())
+            ink_ratio = (sum(1 for px in pixels if px < 100) / max(1, len(pixels)))
+            is_bold = ink_ratio >= 0.22
+
+            # Detect a continuous horizontal underline immediately below text.
+            gray = image.convert("L")
+            underline = False
+            scan_y0 = min(gray.height, max(0, y1 - 1))
+            scan_y1 = min(gray.height, y1 + max(5, int((y1 - y0) * 0.35)))
+            scan = gray.crop((x0, scan_y0, x1, scan_y1))
+            sw, sh = scan.size
+            for yy in range(sh):
+                run = 0
+                longest = 0
+                for xx in range(sw):
+                    if scan.getpixel((xx, yy)) < 90:
+                        run += 1
+                        longest = max(longest, run)
+                    else:
+                        run = 0
+                if longest >= max(10, int(sw * 0.55)):
+                    underline = True
+                    break
+            lines.append({
+                "text": text, "bold": is_bold, "underlined": underline,
+                "box": (x0, y0, x1, y1)
+            })
+
+        candidates = []
+        for i, line in enumerate(lines):
+            match = target_pattern.match(line["text"])
+            if not match:
+                continue
+            title_parts = []
+            style_bold = line["bold"]
+            style_underlined = line["underlined"]
+            if match.group(2).strip():
+                title_parts.append(match.group(2).strip())
+            else:
+                for following in lines[i + 1:]:
+                    if any_heading_pattern.match(following["text"]):
+                        break
+                    title_parts.append(following["text"])
+                    style_bold = style_bold or following["bold"]
+                    style_underlined = style_underlined or following["underlined"]
+                    break
+            title = re.sub(r"\s+", " ", " ".join(title_parts)).strip()
+            if not title:
+                continue
+            header = f"{digits}. {title}"
+            candidates.append({
+                "page": page_num + 1,
+                "section": f"{expected_prefix} {digits}",
+                "snippet": header[:500],
+                "header_text": header,
+                "bold": bool(style_bold),
+                "underlined": bool(style_underlined),
+                "ocr": True,
+                "header_length": len(title)
+            })
+        return candidates
+    except Exception as e:
+        print(f"[OCR fallback] Page {page_num + 1}: {e}")
+        return []
+
 def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
     """Audit all matching numbered headings and return the strongest single header."""
     results = []
