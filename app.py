@@ -257,7 +257,24 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30, all
             for page_num in range(len(doc)):
                 page = doc[page_num]
                 page_dict = page.get_text("dict")
+                # Extract underline geometry once per page. The old code rescanned
+                # every drawing for every text line, causing very slow numbered searches.
                 drawings = page.get_drawings()
+                underline_shapes = []
+                for drawing in drawings:
+                    for item in drawing.get("items", []):
+                        if not item or item[0] not in ("l", "re"):
+                            continue
+                        if item[0] == "l":
+                            p1, p2 = item[1], item[2]
+                            x0, x1 = sorted((p1.x, p2.x))
+                            y0, y1 = sorted((p1.y, p2.y))
+                            if abs(p1.y - p2.y) <= 1.8:
+                                underline_shapes.append((x0, x1, y0, y1, 0))
+                        else:
+                            rect = fitz.Rect(item[1])
+                            if rect.height <= 3:
+                                underline_shapes.append((rect.x0, rect.x1, rect.y0, rect.y1, rect.height))
                 page_lines = []
 
                 for block in page_dict.get("blocks", []):
@@ -274,31 +291,12 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30, all
                             or "bold" in (sp.get("font", "").lower())
                             for sp in spans
                         )
-                        is_underlined = False
-                        # Detect drawn underline strokes directly below the text line.
-                        for drawing in drawings:
-                            for item in drawing.get("items", []):
-                                if not item or item[0] not in ("l", "re"):
-                                    continue
-                                if item[0] == "l":
-                                    p1, p2 = item[1], item[2]
-                                    x0, x1 = sorted((p1.x, p2.x))
-                                    y0, y1 = sorted((p1.y, p2.y))
-                                    horizontal = abs(p1.y - p2.y) <= 1.8
-                                    near_baseline = line_bbox.y1 - 1 <= y0 <= line_bbox.y1 + 4
-                                    overlaps = x1 >= line_bbox.x0 and x0 <= line_bbox.x1
-                                    if horizontal and near_baseline and overlaps and (x1 - x0) >= min(8, line_bbox.width * 0.25):
-                                        is_underlined = True
-                                        break
-                                else:
-                                    rect = fitz.Rect(item[1])
-                                    near_baseline = line_bbox.y1 - 1 <= rect.y0 <= line_bbox.y1 + 4
-                                    overlaps = rect.x1 >= line_bbox.x0 and rect.x0 <= line_bbox.x1
-                                    if near_baseline and overlaps and rect.width >= min(8, line_bbox.width * 0.25) and rect.height <= 3:
-                                        is_underlined = True
-                                        break
-                            if is_underlined:
-                                break
+                        is_underlined = any(
+                            line_bbox.y1 - 1 <= y0 <= line_bbox.y1 + 4
+                            and x1 >= line_bbox.x0 and x0 <= line_bbox.x1
+                            and (x1 - x0) >= min(8, line_bbox.width * 0.25)
+                            for x0, x1, y0, y1, shape_height in underline_shapes
+                        )
 
                         page_lines.append({
                             "text": line_text,
