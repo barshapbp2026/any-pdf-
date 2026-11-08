@@ -86,7 +86,7 @@ def page_text_unicode(page) -> str:
 _NEP_DIGITS = str.maketrans("0123456789", "०१२३४५६७८९")
 # खोजका लागि हटाउने: स्पेस, ZWJ/ZWNJ, हलन्त, सबै मात्रा, चन्द्रबिन्दु/शिरबिन्दु, नुक्ता
 # Remove whitespace, zero-width controls and punctuation, but KEEP vowel signs.
-_STRIP = re.compile(r"[\\s\\u200b-\\u200d\\u0964\\u0965,;:!?।॥()\\[\\]{}\"'“”‘’–—-]+")
+_STRIP = re.compile(r"[\s\u200b-\u200d\u0964\u0965,;:!?।॥()\[\]{}\"'“”‘’–—-]+")
 _FOLD = str.maketrans({
     "श": "स", "ष": "स", "व": "ब", "ङ": "न", "ञ": "न", "ण": "न",
     "ई": "इ", "ी": "ि", "ऊ": "उ", "ू": "ु",
