@@ -116,13 +116,18 @@ def _ocr_numbered_headers(page, page_num, target_pattern, any_heading_pattern, d
             if not title:
                 continue
             header = f"{digits}. {title}"
+            # OCR is only the final longest-header fallback; its visual
+            # estimates must not decide bold or underline ranking.
             candidates.append({
                 "page": page_num + 1,
                 "section": f"{expected_prefix} {digits}",
                 "snippet": header[:500],
                 "header_text": header,
-                "bold": bool(style_bold),
-                "underlined": bool(style_underlined),
+                "number_bold": False,
+                "header_bold": False,
+                "header_underlined": False,
+                "bold": False,
+                "underlined": False,
                 "ocr": True,
                 "header_length": len(title),
                 "sequence_score": 0
@@ -229,26 +234,45 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
                         continue
 
                     title_parts = []
-                    style_bold = line["bold"]
-                    style_underlined = line["underlined"]
                     first_title = match.group(2).strip()
+                    number_bold = False
+                    header_bold = False
+                    header_underlined = False
+
+                    # Treat the number and title as independent text spans.
+                    prefix_length = len(match.group(0)) - len(match.group(2))
+                    char_pos = 0
+                    for span in line.get("spans", []):
+                        span_text = span.get("text", "")
+                        span_end = char_pos + len(span_text)
+                        span_bold = (
+                            (int(span.get("flags", 0)) & 16) != 0
+                            or "bold" in span.get("font", "").lower()
+                        )
+                        if char_pos < prefix_length and span_end > 0 and span_bold:
+                            number_bold = True
+                        if span_end > prefix_length and span_bold:
+                            header_bold = True
+                        char_pos = span_end
+
                     if first_title:
                         title_parts.append(first_title)
+                        header_underlined = bool(line["underlined"])
                     else:
-                        # The number and its title are often extracted as separate lines.
+                        # Number-only line: get style only from the title line.
                         for following in page_lines[i + 1:]:
                             if any_heading_pattern.match(following["text"]):
                                 break
                             if following["text"]:
                                 title_parts.append(following["text"])
-                                style_bold = style_bold or following["bold"]
-                                style_underlined = style_underlined or following["underlined"]
+                                header_bold = bool(following["bold"])
+                                header_underlined = bool(following["underlined"])
                                 if len(" ".join(title_parts)) >= 500:
                                     break
                             if title_parts:
                                 break
 
-                    header_title = re.sub(r"\s+", " ", " ".join(title_parts)).strip()
+                    header_title = re.sub(r"\\s+", " ", " ".join(title_parts)).strip()
                     if not header_title:
                         continue
 
@@ -258,8 +282,12 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
                         "section": f"{expected_prefix} {digits}",
                         "snippet": header_text[:500],
                         "header_text": header_text,
-                        "bold": bool(style_bold),
-                        "underlined": bool(style_underlined),
+                        "number_bold": bool(number_bold),
+                        "header_bold": bool(header_bold),
+                        "header_underlined": bool(header_underlined),
+                        "bold": bool(header_bold),
+                        "underlined": bool(header_underlined),
+                        "ocr": False,
                         "header_length": len(header_title),
                         "number_value": int(ascii_digits),
                         "heading_order": next((idx for idx, entry in enumerate(document_heading_numbers) if entry[1] == page_num and entry[2] == i), -1)
@@ -423,15 +451,19 @@ def collect_results(queries, mode="all", target="", targets=[], anusuchi_query="
             print(f"Error processing {f}: {e}")
 
     # Strict audit priority:
-    # 1) bold, 2) underlined, 3) correct N-1 -> N -> N+1 flow,
-    # 4) longest extracted header title.
+    # 1) number bold, 2) header bold+underlined, 3) header bold,
+    # 4) header underlined, 5) N-1 -> N -> N+1 flow,
+    # 6) longest extracted/OCR header text.
     for q, candidates in audited.items():
         if candidates:
             chosen = max(candidates, key=lambda m: (
-                bool(m.get("bold")),
-                bool(m.get("underlined")),
+                bool(m.get("number_bold")),
+                bool(m.get("header_bold", m.get("bold")) and
+                     m.get("header_underlined", m.get("underlined"))),
+                bool(m.get("header_bold", m.get("bold"))),
+                bool(m.get("header_underlined", m.get("underlined"))),
                 int(m.get("sequence_score", 0)),
-                len(m.get("header_text") or m.get("snippet") or "")
+                int(m.get("header_length", 0))
             ))
             ordinary.append({
                 "filename": chosen.pop("filename"),
