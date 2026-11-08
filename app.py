@@ -208,7 +208,8 @@ def serve_pdf_with_header_highlight(filepath):
     page_number = request.args.get("page", default=1, type=int)
     heading = (request.args.get("snippet") or "").splitlines()[0].strip()
     # Identify the main heading number immediately followed by a dot (e.g. १२.)
-    number_match = re.match(r"^([0-9०-९]{1,3})\.(?![0-9०-९])", heading)
+    # Accept a little spacing between the section number and its dot.
+    number_match = re.match(r"^\s*([0-9०-९]{1,3})\s*\.(?![0-9०-९])", heading)
     try:
         doc = fitz.open(stream=pdf_data, filetype="pdf")
         if page_number < 1 or page_number > len(doc):
@@ -218,38 +219,35 @@ def serve_pdf_with_header_highlight(filepath):
         page = doc[page_number - 1]
         highlighted = False
 
+        # Only numbered main headers are highlighted; body-text searches
+        # deliberately receive no highlight.
         if number_match:
-            wanted = number_match.group(1).translate(str.maketrans("0123456789", "०१२३४५६७८९"))
-            # Inspect individual PDF text lines and highlight only the line whose
-            # first characters are the requested main number followed by a dot.
+            digit_map = str.maketrans("0123456789", "०१२३४५६७८९")
+            wanted = number_match.group(1).translate(digit_map)
             text_dict = page.get_text("dict")
             for block in text_dict.get("blocks", []):
                 for line in block.get("lines", []):
                     line_text = "".join(span.get("text", "") for span in line.get("spans", [])).strip()
-                    line_match = re.match(r"^([0-9०-९]{1,3})\.(?![0-9०-९])", line_text)
+                    # Some PDFs place the dot in a separate span with a space.
+                    line_text = re.sub(r"(?<=[0-9०-९])\s+(?=\.)", "", line_text)
+                    line_match = re.match(r"^\s*([0-9०-९]{1,3})\s*\.(?![0-9०-९])", line_text)
                     if not line_match:
                         continue
-                    line_number = line_match.group(1).translate(str.maketrans("0123456789", "०१२३४५६७८९"))
-                    if line_number == wanted:
-                        rect = fitz.Rect(line.get("bbox", (0, 0, 0, 0)))
-                        if not rect.is_empty:
-                            annot = page.add_highlight_annot(rect)
-                            annot.set_colors(stroke=(0.55, 0.0, 0.0))
-                            annot.set_opacity(0.65)
-                            annot.update()
-                            highlighted = True
-                        break
+                    line_number = line_match.group(1).translate(digit_map)
+                    if line_number != wanted:
+                        continue
+
+                    # Highlight the header line only, never paragraph/body text.
+                    rect = fitz.Rect(line.get("bbox", (0, 0, 0, 0)))
+                    if not rect.is_empty:
+                        annot = page.add_highlight_annot(rect)
+                        annot.set_colors(stroke=(0.55, 0.0, 0.0))
+                        annot.set_opacity(0.65)
+                        annot.update()
+                        highlighted = True
+                    break
                 if highlighted:
                     break
-        elif heading:
-            # For non-numbered text searches, retain a single-line-only fallback.
-            rects = page.search_for(heading[:180])
-            if rects:
-                annot = page.add_highlight_annot(rects)
-                annot.set_colors(stroke=(0.55, 0.0, 0.0))
-                annot.set_opacity(0.65)
-                annot.update()
-                highlighted = True
 
         output = doc.tobytes()
         doc.close()
