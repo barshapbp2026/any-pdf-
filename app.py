@@ -251,6 +251,15 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
                         "header_length": len(header_title)
                     })
 
+            # If native PDF text extraction found no numbered heading, OCR every page.
+            # This catches scanned PDFs whose pages contain only images.
+            if not candidates:
+                for page_num in range(len(doc)):
+                    candidates.extend(_ocr_numbered_headers(
+                        doc[page_num], page_num, target_pattern,
+                        any_heading_pattern, digits, expected_prefix
+                    ))
+
             if candidates:
                 # First prefer bold/underlined headings; if none exist, choose
                 # the candidate with the longest actual header title.
