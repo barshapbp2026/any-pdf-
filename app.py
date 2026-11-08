@@ -176,7 +176,12 @@ def extract_header_lines(page):
             continue
         if not (item["numbered"] or item["bold"] or is_large):
             continue
-        if re.match(r"^\s*[०-९0-9]+\s*[.)।:-]?\s*$", value) and i + 1 < len(raw_lines):
+        number_only = re.match(r"^\s*[०-९0-9]+\s*[.)।:-]?\s*$", value)
+        legal_label_only = re.match(
+            r"^\s*(?:धारा|दफा|नियम|अनुसूची|भाग|परिच्छेद)\s*[०-९0-9]+\s*[.)।:-]?\s*$",
+            value
+        )
+        if (number_only or legal_label_only) and i + 1 < len(raw_lines):
             nxt = raw_lines[i + 1]["text"]
             if len(nxt) <= 180:
                 value = value + " " + nxt
