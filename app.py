@@ -494,7 +494,10 @@ def search_anusuchi_tables(pdf_bytes, query, max_results=30):
         for page_no in range(len(doc)):
             page = doc[page_no]
             text = page_text_unicode(page)
-            if heading_key not in search_key(text):
+            # Ignore body references such as "अनुसूची-२" inside another rule.
+            # The actual schedule heading must begin one of the page's first five text lines.
+            opening_lines = [search_key(line.strip()) for line in text.splitlines() if line.strip()][:5]
+            if not any(line.startswith(heading_key) for line in opening_lines):
                 continue
             table_found = False
             table_text = ""
