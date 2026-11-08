@@ -400,6 +400,7 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30, all
                     both_prefix = leading_styled_text(title_styles, title_start, bold=True, underline=True)
                     header_underlined = bool(underlined_prefix)
                     header_bold = bool(bold_prefix)
+                    header_bold_underlined = bool(both_prefix)
 
                     # Header title ends at its visual style boundary. If the PDF
                     # has no style boundary, stop at the legal heading colon where present.
@@ -421,6 +422,7 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30, all
                         "number_bold": bool(number_bold),
                         "header_bold": bool(header_bold),
                         "header_underlined": bool(header_underlined),
+                        "header_bold_underlined": bool(header_bold_underlined),
                         "bold": bool(header_bold),
                         "underlined": bool(header_underlined),
                         "ocr": False,
@@ -727,8 +729,7 @@ def collect_results(queries, mode="all", target="", targets=[], anusuchi_query="
         if chosen is None:
             chosen = unique_match(
                 candidates,
-                lambda m: bool(m.get("header_bold", m.get("bold")))
-                and bool(m.get("header_underlined", m.get("underlined")))
+                lambda m: bool(m.get("header_bold_underlined"))
             )
         if chosen is None:
             chosen = unique_match(
