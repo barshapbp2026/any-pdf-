@@ -3,3 +3,5 @@ PyMuPDF
 requests
 python-dotenv
 gunicorn
+pytesseract
+Pillow
