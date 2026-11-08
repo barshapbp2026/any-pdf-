@@ -141,18 +141,29 @@ def _ocr_numbered_headers(page, page_num, target_pattern, any_heading_pattern, d
 def extract_header_lines(page):
     """Return visually/structurally identifiable heading lines, never body paragraphs."""
     data = page.get_text("dict")
+    all_spans = [s for b in data.get("blocks", []) for ln in b.get("lines", []) for s in ln.get("spans", [])]
+    page_legacy = any(is_legacy_font(s.get("font", "")) for s in all_spans)
     raw_lines, sizes = [], []
     for block in data.get("blocks", []):
         for line in block.get("lines", []):
             spans = line.get("spans", [])
-            value = re.sub(r"\s+", " ", "".join(s.get("text", "") for s in spans)).strip()
+            parts = []
+            for span in spans:
+                value_part = span.get("text", "")
+                if is_legacy_font(span.get("font", "")) or (
+                    page_legacy and not _DEVA.search(value_part) and not _URL.search(value_part)
+                    and re.search(r"[a-zA-Z;']]", value_part)
+                ):
+                    value_part = convert_preeti(value_part)
+                parts.append(value_part)
+            value = re.sub(r"\s+", " ", "".join(parts)).strip()
             if not value:
                 continue
             size = max((float(s.get("size", 0) or 0) for s in spans), default=0)
             if size > 0:
                 sizes.append(size)
             bold = any((int(s.get("flags", 0)) & 16) != 0 or "bold" in s.get("font", "").lower() for s in spans)
-            numbered = bool(re.match(r"^\s*(?:[०-९0-9]+\s*[.)।:-]|भाग\s*[०-९0-9]+|परिच्छेद\s*[०-९0-9]+)", value))
+            numbered = bool(re.match(r"^\s*(?:(?:धारा|दफा|नियम|अनुसूची|भाग|परिच्छेद)\s*[०-९0-9]+|[०-९0-9]+\s*[.)।:-])", value))
             raw_lines.append({"text": value, "size": size, "bold": bold, "numbered": numbered})
     if not raw_lines:
         return []
