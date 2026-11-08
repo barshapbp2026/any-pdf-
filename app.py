@@ -152,7 +152,7 @@ def extract_header_lines(page):
                 value_part = span.get("text", "")
                 if is_legacy_font(span.get("font", "")) or (
                     page_legacy and not _DEVA.search(value_part) and not _URL.search(value_part)
-                    and re.search(r"[a-zA-Z;']]", value_part)
+                    and re.search(r"[a-zA-Z;'\]\[{}@#!]", value_part)
                 ):
                     value_part = convert_preeti(value_part)
                 parts.append(value_part)
