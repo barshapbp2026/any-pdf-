@@ -15,7 +15,7 @@ GITHUB_BRANCH = "main"
 def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
     """Find a numbered main heading and its section in any PDF."""
     results = []
-    numeric_match = re.fullmatch(r"\\s*([0-9०-९]+)\\s*\\.?\\s*", query or "")
+    numeric_match = re.fullmatch(r"\s*([0-9०-९]+)\s*\.?\s*", query or "")
     expected_prefix = "दफा"
     context_lower = folder_context.lower()
     if "संविधान" in context_lower:
@@ -34,16 +34,14 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
             ascii_digits = digits.translate(str.maketrans("०१२३४५६७८९", "0123456789"))
             number_options = {digits, ascii_digits}
             target_pattern = re.compile(
-                r"^\\s*(" + "|".join(re.escape(x) for x in number_options) +
-                r")\\s*\\.(?![0-9०-९])\\s*(.*)$"
+                r"^\s*(" + "|".join(re.escape(x) for x in number_options) +
+                r")\s*\.(?![0-9०-९])\s*(.*)$"
             )
-            any_heading_pattern = re.compile(r"^\\s*[०-९0-9]+\\s*\\.(?![०-९0-9])")
+            any_heading_pattern = re.compile(r"^\s*[०-९0-9]+\s*\.(?![०-९0-9])")
             all_lines = []
             for page_num in range(len(doc)):
-                page_text = page_text_unicode(doc[page_num])
-                for line in page_text.splitlines():
-                    # PDFs sometimes place a space between the section number and its dot.
-                    clean_line = re.sub(r"(?<=[0-9०-९])\\s+(?=\\.)", "", line).strip()
+                for line in page_text_unicode(doc[page_num]).splitlines():
+                    clean_line = re.sub(r"(?<=[0-9०-९])\s+(?=\.)", "", line).strip()
                     all_lines.append((page_num + 1, clean_line))
 
             candidates = []
@@ -51,28 +49,12 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
                 match = target_pattern.match(line)
                 if not match:
                     continue
-                heading_body = match.group(2).strip()
-                section_lines = [line] if line else []
-                if heading_body:
-                    section_lines = [line]
-                else:
-                    section_lines = [line]
-                    # Some documents put the heading text on the line after "N."
-                    for _, following in all_lines[i + 1:]:
-                        if not following:
-                            continue
-                        if any_heading_pattern.match(following):
-                            break
-                        section_lines.append(following)
-                        if len(" ".join(section_lines)) > 240:
-                            break
-
+                section_lines = [line]
                 for _, following in all_lines[i + 1:]:
                     if any_heading_pattern.match(following):
                         break
                     if following:
                         section_lines.append(following)
-
                 section_text = " ".join(section_lines).strip()
                 candidates.append({
                     "page": page_num,
