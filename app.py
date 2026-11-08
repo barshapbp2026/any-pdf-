@@ -321,7 +321,7 @@ def serve_pdf_with_header_highlight(filepath):
     heading = (request.args.get("snippet") or "").splitlines()[0].strip()
     # Identify the main heading number immediately followed by a dot (e.g. १२.)
     # Accept a little spacing between the section number and its dot.
-    number_match = re.match(r"^\s*([0-9०-९]{1,3})\s*\.(?![0-9०-९])", heading)
+    number_match = re.match(r"^\s*([0-9०-९]+)\s*\.(?![0-9०-९])", heading)
     try:
         doc = fitz.open(stream=pdf_data, filetype="pdf")
         if page_number < 1 or page_number > len(doc):
@@ -342,7 +342,7 @@ def serve_pdf_with_header_highlight(filepath):
                     line_text = "".join(span.get("text", "") for span in line.get("spans", [])).strip()
                     # Some PDFs place the dot in a separate span with a space.
                     line_text = re.sub(r"(?<=[0-9०-९])\s+(?=\.)", "", line_text)
-                    line_match = re.match(r"^\s*([0-9०-९]{1,3})\s*\.(?![0-9०-९])", line_text)
+                    line_match = re.match(r"^\s*([0-9०-९]+)\s*\.(?![0-9०-९])", line_text)
                     if not line_match:
                         continue
                     line_number = line_match.group(1).translate(digit_map)
