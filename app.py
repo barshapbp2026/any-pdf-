@@ -1,5 +1,6 @@
 import os
 import re
+import difflib
 import requests
 from flask import Flask, render_template, request, jsonify
 import fitz
@@ -136,6 +137,69 @@ def _ocr_numbered_headers(page, page_num, target_pattern, any_heading_pattern, d
     except Exception as e:
         print(f"[OCR fallback] Page {page_num + 1}: {e}")
         return []
+
+def extract_header_lines(page):
+    """Return visually/structurally identifiable heading lines, never body paragraphs."""
+    data = page.get_text("dict")
+    all_spans = [s for b in data.get("blocks", []) for ln in b.get("lines", []) for s in ln.get("spans", [])]
+    page_legacy = any(is_legacy_font(s.get("font", "")) for s in all_spans)
+    raw_lines, sizes = [], []
+    for block in data.get("blocks", []):
+        for line in block.get("lines", []):
+            spans = line.get("spans", [])
+            parts = []
+            for span in spans:
+                value_part = span.get("text", "")
+                if is_legacy_font(span.get("font", "")) or (
+                    page_legacy and not _DEVA.search(value_part) and not _URL.search(value_part)
+                    and re.search(r"[a-zA-Z;'\]\[{}@#!]", value_part)
+                ):
+                    value_part = convert_preeti(value_part)
+                parts.append(value_part)
+            value = re.sub(r"\s+", " ", "".join(parts)).strip()
+            if not value:
+                continue
+            size = max((float(s.get("size", 0) or 0) for s in spans), default=0)
+            if size > 0:
+                sizes.append(size)
+            bold = any((int(s.get("flags", 0)) & 16) != 0 or "bold" in s.get("font", "").lower() for s in spans)
+            numbered = bool(re.match(r"^\s*(?:(?:धारा|दफा|नियम|अनुसूची|भाग|परिच्छेद)\s*[०-९0-9]+|[०-९0-9]+\s*[.)।:-])", value))
+            raw_lines.append({"text": value, "size": size, "bold": bold, "numbered": numbered})
+    if not raw_lines:
+        return []
+    body_size = sorted(sizes)[len(sizes) // 2] if sizes else 0
+    output, seen = [], set()
+    for i, item in enumerate(raw_lines):
+        value = item["text"]
+        is_large = body_size > 0 and item["size"] >= body_size * 1.16
+        if len(value) > (320 if item["numbered"] else 180):
+            continue
+        if not (item["numbered"] or item["bold"] or is_large):
+            continue
+        if re.match(r"^\s*[०-९0-9]+\s*[.)।:-]?\s*$", value) and i + 1 < len(raw_lines):
+            nxt = raw_lines[i + 1]["text"]
+            if len(nxt) <= 180:
+                value = value + " " + nxt
+        key = re.sub(r"\s+", " ", value).strip()
+        if key not in seen:
+            seen.add(key)
+            output.append({"header_text": key, "bold": bool(item["bold"]), "underlined": False})
+    return output
+
+
+def _header_similarity(query_key, header_key):
+    if not query_key or not header_key:
+        return 0.0
+    if query_key in header_key:
+        return 1.0
+    if len(query_key) < 3:
+        return 0.0
+    best = difflib.SequenceMatcher(None, query_key, header_key).ratio()
+    for width in range(max(2, len(query_key) - 2), min(len(header_key), len(query_key) + 2) + 1):
+        for start in range(0, len(header_key) - width + 1):
+            best = max(best, difflib.SequenceMatcher(None, query_key, header_key[start:start + width]).ratio())
+    return best
+
 
 def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30, allow_ocr=False):
     """Audit all matching numbered headings and return the strongest single header."""
@@ -348,13 +412,21 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30, all
                     results.append(candidate)
         else:
             clean_q = search_key(query)
+            threshold = 0.78 if len(clean_q) >= 5 else 0.86
+            # Search extracted headings only; ordinary body paragraphs are excluded.
             for page_num in range(len(doc)):
-                for line in page_text_unicode(doc[page_num]).splitlines():
-                    if clean_q and clean_q in search_key(line):
-                        results.append({"page": page_num + 1, "section": "सन्दर्भ", "snippet": line.strip()[:200]})
-                        break
-                if len(results) >= max_results:
-                    break
+                for header in extract_header_lines(doc[page_num]):
+                    header_text = header["header_text"]
+                    score = _header_similarity(clean_q, search_key(header_text))
+                    if score >= threshold:
+                        results.append({
+                            "page": page_num + 1, "section": "हेडर",
+                            "snippet": header_text[:300], "header_text": header_text[:500],
+                            "bold": header["bold"], "underlined": header["underlined"],
+                            "match_score": round(score, 3)
+                        })
+            results.sort(key=lambda item: item.get("match_score", 0), reverse=True)
+            results = results[:max_results]
         doc.close()
     except Exception as e:
         print(f"[search_in_pdf_bytes] Error: {e}")
@@ -393,11 +465,11 @@ def search_anusuchi_tables(pdf_bytes, query, max_results=30):
     number = number_match.group(1).translate(str.maketrans("0123456789", "०१२३४५६७८९"))
     try:
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        heading_re = re.compile(r"अनुसूची\s*(?:[-–:]?\s*)?" + re.escape(number) + r"(?![०-९0-9])")
+        heading_key = search_key("अनुसूची" + number)
         for page_no in range(len(doc)):
             page = doc[page_no]
             text = page_text_unicode(page)
-            if not heading_re.search(text):
+            if heading_key not in search_key(text):
                 continue
             table_found = False
             table_text = ""
