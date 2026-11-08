@@ -312,9 +312,18 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
                 except Exception:
                     candidate["sequence_score"] = 0
 
-            # If native PDF text extraction found no numbered heading, OCR every page.
-            # This catches scanned PDFs whose pages contain only images.
-            if not candidates:
+            # OCR is the final fallback only when native candidates have
+            # no number/header style signal and no sequential-flow signal.
+            # Its visual style estimates are ignored; OCR contributes only
+            # the extracted header length as the last ranking criterion.
+            native_has_priority = any(
+                c.get("number_bold")
+                or c.get("header_bold")
+                or c.get("header_underlined")
+                or int(c.get("sequence_score", 0)) > 0
+                for c in candidates
+            )
+            if not native_has_priority:
                 for page_num in range(len(doc)):
                     candidates.extend(_ocr_numbered_headers(
                         doc[page_num], page_num, target_pattern,
