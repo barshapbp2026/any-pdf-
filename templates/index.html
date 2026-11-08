@@ -178,14 +178,14 @@ function getPdfViewerUrl(filepath) {
 
 function getPdfPageViewerUrl(filepath, page, snippet) {
   const encodedPath = filepath.split('/').map(encodeURIComponent).join('/');
-  const rawUrl = `https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}/pdfs/${encodedPath}`;
+  const rawUrl = \`https://raw.githubusercontent.com/\${GITHUB_REPO}/\${GITHUB_BRANCH}/pdfs/\${encodedPath}\`;
   const viewer = 'https://mozilla.github.io/pdf.js/web/viewer.html';
-  const searchText = String(snippet || '').replace(/\\s+/g, ' ').trim().slice(0, 4500);
-  // phrase=true makes PDF.js highlight the complete heading phrase, not each common word separately.
-  const hash = `page=${Math.max(1, Number(page) || 1)}&zoom=page-fit&search=${encodeURIComponent(searchText)}&phrase=true`;
-  return `${viewer}?file=${encodeURIComponent(rawUrl)}#${hash}`;
+  // Use the exact short heading line. PDF.js URL search cannot reliably highlight
+  // a multi-paragraph section passed as one very long search phrase.
+  const searchText = String(snippet || '').replace(/\s+/g, ' ').trim().slice(0, 180);
+  const hash = \`page=\${Math.max(1, Number(page) || 1)}&zoom=page-fit&search=\${encodeURIComponent(searchText)}\`;
+  return \`\${viewer}?file=\${encodeURIComponent(rawUrl)}#\${hash}\`;
 }
-
 function getDownloadUrl(filepath) {
   const encodedPath = filepath.split('/').map(encodeURIComponent).join('/');
   return `https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}/pdfs/${encodedPath}`;
