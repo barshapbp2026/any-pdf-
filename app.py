@@ -459,7 +459,14 @@ def collect_results(queries, mode="all", target="", targets=[], anusuchi_query="
                 if not matches:
                     continue
 
-                numeric_query = re.fullmatch(r"\s*[0-9०-९]+\s*\.?\s*", q or "")
+                # Strict numbered-heading protocol applies only to the
+                # Dhara, Dafa, Niyam and Nirdeshan boxes. Anusuchi is a
+                # separate table lookup and must bypass this ranking.
+                is_anusuchi_search = bool(anusuchi_query and q == anusuchi_query)
+                numeric_query = (
+                    not is_anusuchi_search
+                    and re.fullmatch(r"\s*[0-9०-९]+\s*\.?\s*", q or "")
+                )
                 if numeric_query:
                     for match in matches:
                         match = dict(match)
