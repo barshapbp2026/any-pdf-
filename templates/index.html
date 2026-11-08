@@ -163,6 +163,21 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>'
 const GITHUB_REPO = "barshapbp2026/any-pdf-";
 const GITHUB_BRANCH = "main";
 
+
+/* Numeric legal-search inputs: 5 / ५ becomes ५. immediately.
+   Do not alter the API-key or natural-language chat input. */
+document.addEventListener('input', function (event) {
+  const el = event.target;
+  if (!el.matches('.search-grid input, .folder-query')) return;
+  const value = el.value.trim();
+  if (!/^[0-9०-९]+\.?$/.test(value)) return;
+  const ascii = value.replace(/\./g, '').replace(/[०-९]/g,
+    d => String('०१२३४५६७८९'.indexOf(d)));
+  const nepali = ascii.replace(/[0-9]/g, d => '०१२३४५६७८९'[Number(d)]);
+  el.value = nepali + '.';
+  el.setSelectionRange(el.value.length, el.value.length);
+});
+
 function cleanName(name) { return name.replace(/\.pdf$/i, ''); }
 
 function getPdfViewerUrl(filepath) {
