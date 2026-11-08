@@ -180,8 +180,9 @@ function getPdfPageViewerUrl(filepath, page, snippet) {
   const encodedPath = filepath.split('/').map(encodeURIComponent).join('/');
   const rawUrl = 'https://raw.githubusercontent.com/' + GITHUB_REPO + '/' + GITHUB_BRANCH + '/pdfs/' + encodedPath;
   const viewer = 'https://mozilla.github.io/pdf.js/web/viewer.html';
-  const searchText = String(snippet || '').replace(/\s+/g, ' ').trim().slice(0, 180);
-  const hash = 'page=' + Math.max(1, Number(page) || 1) + '&zoom=page-fit&search=' + encodeURIComponent(searchText);
+  // Search only the main heading line, never the body/whole section.
+  const headingOnly = String(snippet || '').split(/\r?\n/)[0].replace(/\s+/g, ' ').trim().slice(0, 180);
+  const hash = 'page=' + Math.max(1, Number(page) || 1) + '&zoom=page-fit&search=' + encodeURIComponent(headingOnly) + '&phrase=true';
   return viewer + '?file=' + encodeURIComponent(rawUrl) + '#' + hash;
 }
 function getDownloadUrl(filepath) {
@@ -441,7 +442,7 @@ function renderResults(results, query) {
     html += `<div class="pdf-group"><h4>📄 ${esc(g.filename)}</h4>`;
     g.matches.forEach(m => {
       const sec = m.section ? `<span class="badge">${esc(m.section)}</span>` : `<span class="badge">सन्दर्भ अज्ञात</span>`;
-      const pageUrl = getPdfPageViewerUrl(g.filename, m.page, m.highlight_text || m.snippet);
+      const pageUrl = getPdfPageViewerUrl(g.filename, m.page, m.snippet);
       html += `<div class="result-item"><div class="meta">${sec} पृष्ठ <strong>${m.page}</strong><a href="${pageUrl}" target="_blank" rel="noopener" style="margin-left:auto"><button class="small">पृष्ठ हाइलाइटसहित देखाउनुहोस् →</button></a></div><div class="snippet">${esc(m.snippet)}</div></div>`;
     });
     html += '</div>';
