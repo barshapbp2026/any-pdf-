@@ -137,7 +137,7 @@ def _ocr_numbered_headers(page, page_num, target_pattern, any_heading_pattern, d
         print(f"[OCR fallback] Page {page_num + 1}: {e}")
         return []
 
-def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
+def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30, allow_ocr=False):
     """Audit all matching numbered headings and return the strongest single header."""
     results = []
     numeric_match = re.fullmatch(r"\s*([0-9०-९]+)\s*\.?\s*", query or "")
@@ -215,7 +215,9 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
                             "text": line_text,
                             "spans": spans,
                             "bold": is_bold,
-                            "underlined": is_underlined
+                            "underlined": is_underlined,
+                            "font_size": max((float(sp.get("size", 0)) for sp in spans), default=0),
+                            "x0": float(line_bbox.x0)
                         })
 
                 for order_index, detected_line in enumerate(page_lines):
@@ -224,7 +226,7 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
                         detected_digits = detected_match.group(0).strip().rstrip(".").strip()
                         detected_digits = detected_digits.translate(str.maketrans("०१२३४५६७८९", "0123456789"))
                         try:
-                            document_heading_numbers.append((int(detected_digits), page_num, order_index))
+                            document_heading_numbers.append((int(detected_digits), page_num, order_index, detected_line["font_size"], detected_line["x0"]))
                         except ValueError:
                             pass
 
@@ -290,18 +292,34 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
                         "ocr": False,
                         "header_length": len(header_title),
                         "number_value": int(ascii_digits),
+                        "heading_font_size": float(line.get("font_size", 0)),
+                        "heading_x0": float(line.get("x0", 0)),
                         "heading_order": next((idx for idx, entry in enumerate(document_heading_numbers) if entry[1] == page_num and entry[2] == i), -1)
                     })
 
-            # Score whether the target heading follows N-1 and precedes N+1
-            # in the PDF's actual numbered-heading reading order.
+            # Score N-1 -> N -> N+1 only among headings at the
+            # same visual level (similar font size and left indentation).
             for candidate in candidates:
                 try:
                     target_num = int(ascii_digits)
                     pos = int(candidate.get("heading_order", -1))
-                    if pos >= 0:
-                        prev_num = document_heading_numbers[pos - 1][0] if pos > 0 else None
-                        next_num = document_heading_numbers[pos + 1][0] if pos + 1 < len(document_heading_numbers) else None
+                    candidate_size = float(candidate.get("heading_font_size", 0))
+                    candidate_x0 = float(candidate.get("heading_x0", 0))
+                    same_level = []
+                    for entry_index, entry in enumerate(document_heading_numbers):
+                        entry_size = float(entry[3] or 0)
+                        entry_x0 = float(entry[4] or 0)
+                        size_close = (
+                            candidate_size <= 0 or entry_size <= 0
+                            or abs(entry_size - candidate_size) <= max(1.0, candidate_size * 0.08)
+                        )
+                        indent_close = abs(entry_x0 - candidate_x0) <= 18
+                        if size_close and indent_close:
+                            same_level.append((entry_index, entry))
+                    level_pos = next((j for j, item in enumerate(same_level) if item[0] == pos), -1)
+                    if level_pos >= 0:
+                        prev_num = same_level[level_pos - 1][1][0] if level_pos > 0 else None
+                        next_num = same_level[level_pos + 1][1][0] if level_pos + 1 < len(same_level) else None
                         candidate["sequence_score"] = (
                             (1 if prev_num == target_num - 1 else 0) +
                             (1 if next_num == target_num + 1 else 0)
@@ -309,21 +327,15 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
                     else:
                         candidate["sequence_score"] = 0
                     candidate.pop("heading_order", None)
+                    candidate.pop("heading_font_size", None)
+                    candidate.pop("heading_x0", None)
                 except Exception:
                     candidate["sequence_score"] = 0
+                    candidate.pop("heading_order", None)
+                    candidate.pop("heading_font_size", None)
+                    candidate.pop("heading_x0", None)
 
-            # OCR is the final fallback only when native candidates have
-            # no number/header style signal and no sequential-flow signal.
-            # Its visual style estimates are ignored; OCR contributes only
-            # the extracted header length as the last ranking criterion.
-            native_has_priority = any(
-                c.get("number_bold")
-                or c.get("header_bold")
-                or c.get("header_underlined")
-                or int(c.get("sequence_score", 0)) > 0
-                for c in candidates
-            )
-            if not native_has_priority:
+            if allow_ocr:
                 for page_num in range(len(doc)):
                     candidates.extend(_ocr_numbered_headers(
                         doc[page_num], page_num, target_pattern,
@@ -443,7 +455,7 @@ def collect_results(queries, mode="all", target="", targets=[], anusuchi_query="
             for q in queries:
                 matches = (search_anusuchi_tables(pdf_data, anusuchi_query)
                            if anusuchi_query and q == anusuchi_query
-                           else search_in_pdf_bytes(pdf_data, q, folder_context))
+                           else search_in_pdf_bytes(pdf_data, q, folder_context, allow_ocr=False))
                 if not matches:
                     continue
 
@@ -459,26 +471,103 @@ def collect_results(queries, mode="all", target="", targets=[], anusuchi_query="
         except Exception as e:
             print(f"Error processing {f}: {e}")
 
-    # Strict audit priority:
-    # 1) number bold, 2) header bold+underlined, 3) header bold,
-    # 4) header underlined, 5) N-1 -> N -> N+1 flow,
-    # 6) longest extracted/OCR header text.
+    # Strict staged selection: advance whenever a stage has zero or
+    # multiple matches. A stage wins only when exactly one candidate matches.
+    def unique_match(items, predicate):
+        hits = [item for item in items if predicate(item)]
+        return hits[0] if len(hits) == 1 else None
+
     for q, candidates in audited.items():
-        if candidates:
-            chosen = max(candidates, key=lambda m: (
-                bool(m.get("number_bold")),
-                bool(m.get("header_bold", m.get("bold")) and
-                     m.get("header_underlined", m.get("underlined"))),
-                bool(m.get("header_bold", m.get("bold"))),
-                bool(m.get("header_underlined", m.get("underlined"))),
-                int(m.get("sequence_score", 0)),
-                int(m.get("header_length", 0))
-            ))
-            ordinary.append({
-                "filename": chosen.pop("filename"),
-                "matches": [chosen],
-                "query": q
-            })
+        if not candidates:
+            continue
+
+        chosen = unique_match(candidates, lambda m: bool(m.get("number_bold")))
+        if chosen is None:
+            chosen = unique_match(
+                candidates,
+                lambda m: bool(m.get("header_bold", m.get("bold")))
+                and bool(m.get("header_underlined", m.get("underlined")))
+            )
+        if chosen is None:
+            chosen = unique_match(
+                candidates,
+                lambda m: bool(m.get("header_bold", m.get("bold")))
+            )
+        if chosen is None:
+            chosen = unique_match(
+                candidates,
+                lambda m: bool(m.get("header_underlined", m.get("underlined")))
+            )
+
+        # Flow is considered only after all four style stages. Prefer a
+        # uniquely strongest same-level sequence; ties continue to OCR.
+        if chosen is None:
+            best_flow = max((int(m.get("sequence_score", 0)) for m in candidates), default=0)
+            if best_flow > 0:
+                chosen = unique_match(
+                    candidates,
+                    lambda m: int(m.get("sequence_score", 0)) == best_flow
+                )
+
+        # OCR is strictly the last tie-break. It extracts only the title
+        # attached to each matching number, never paragraph/body text.
+        if chosen is None:
+            ocr_candidates = []
+            for f in files_to_search:
+                folder_context = f.split('/')[0] if '/' in f else ""
+                try:
+                    pdf_data = get_pdf_bytes_from_github(f)
+                    if not pdf_data:
+                        continue
+                    numeric_match = re.fullmatch(r"\\s*([0-9०-९]+)\\s*\\.?\\s*", q or "")
+                    if not numeric_match:
+                        continue
+                    raw_digits = numeric_match.group(1)
+                    digit_map = str.maketrans("0123456789", "०१२३४५६७८९")
+                    digits = raw_digits.translate(digit_map)
+                    ascii_digits = digits.translate(str.maketrans("०१२३४५६७८९", "0123456789"))
+                    number_options = {digits, ascii_digits}
+                    target_pattern = re.compile(
+                        r"^\\s*(" + "|".join(re.escape(x) for x in number_options) +
+                        r")\\s*\\.(?![0-9०-९])\\s*(.*)$"
+                    )
+                    any_heading_pattern = re.compile(r"^\\s*[०-९0-9]+\\s*\\.(?![०-९0-9])")
+                    doc = fitz.open(stream=pdf_data, filetype="pdf")
+                    expected_prefix = "दफा"
+                    context_lower = folder_context.lower()
+                    if "संविधान" in context_lower:
+                        expected_prefix = "धारा"
+                    elif "निर्देशिका" in context_lower:
+                        expected_prefix = "निर्देशन"
+                    elif "नियम" in context_lower:
+                        expected_prefix = "नियम"
+                    for page_num in range(len(doc)):
+                        for item in _ocr_numbered_headers(
+                            doc[page_num], page_num, target_pattern,
+                            any_heading_pattern, digits, expected_prefix
+                        ):
+                            item["filename"] = f
+                            item["query"] = q
+                            ocr_candidates.append(item)
+                    doc.close()
+                except Exception as e:
+                    print(f"[OCR final fallback] {f}: {e}")
+
+            if ocr_candidates:
+                chosen = max(ocr_candidates, key=lambda m: int(m.get("header_length", 0)))
+            else:
+                # If OCR cannot read any candidate, retain the longest native
+                # header title; never measure the body text below a heading.
+                chosen = max(candidates, key=lambda m: int(m.get("header_length", 0)))
+
+        chosen = dict(chosen)
+        chosen_filename = chosen.pop("filename")
+        chosen.pop("query", None)
+        ordinary.append({
+            "filename": chosen_filename,
+            "matches": [chosen],
+            "query": q
+        })
 
     return ordinary
 
