@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Amita:wght@400;700&family=Arya:wght@400;700&family=Baloo+2:wght@400;500;600;700&family=Eczar:wght@400;500;600;700&family=Hind:wght@400;500;600;700&family=Khand:wght@400;500;600;700&family=Martel:wght@400;600;700&family=Mukta:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600;700&family=Noto+Serif+Devanagari:wght@400;500;600;700&family=Tiro+Devanagari+Hindi&family=Yatra+One&display=swap" rel="stylesheet">
 <title>नेपाली कानुनी PDF सहायक</title>
 <style>
   *{box-sizing:border-box}
-  body{font-family:'Kalimati','Mangal','Noto Sans Devanagari','Noto Serif Devanagari',Arial,sans-serif;margin:0;background:#f5f7fa;color:#1f2937}
+  body{font-family:'Kalimati','Mangal','Noto Sans Devanagari','Noto Serif Devanagari','Mukta','Hind','Tiro Devanagari Hindi','Martel','Khand','Eczar','Arya','Amita','Yatra One','Baloo 2',Arial,sans-serif;margin:0;background:#f5f7fa;color:#1f2937}
   header{background:linear-gradient(135deg,#1e3a8a,#3b82f6);color:#fff;padding:14px 24px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;box-shadow:0 2px 10px rgba(0,0,0,.15)}
   header h1{margin:0;font-size:18px;font-weight:600}
   header input{font-family:Consolas, monospace !important;padding:9px 12px;border-radius:6px;border:none;width:250px;font-size:13px;color:#333}
@@ -193,8 +193,9 @@ function getPdfPageViewerUrl(filepath, page, snippet) {
   const encodedPath = filepath.split('/').map(encodeURIComponent).join('/');
   const rawUrl = `https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}/pdfs/${encodedPath}`;
   const viewer = 'https://mozilla.github.io/pdf.js/web/viewer.html';
-  const searchText = String(snippet || '').replace(/^\\s*[०-९0-9]+\\.\\s*/, '').trim().slice(0, 100);
-  const hash = `page=${Math.max(1, Number(page) || 1)}&zoom=page-fit&search=${encodeURIComponent(searchText)}`;
+  const searchText = String(snippet || '').trim().slice(0, 180);
+  // phrase=true makes PDF.js highlight the complete heading phrase, not each common word separately.
+  const hash = `page=${Math.max(1, Number(page) || 1)}&zoom=page-fit&search=${encodeURIComponent(searchText)}&phrase=true`;
   return `${viewer}?file=${encodeURIComponent(rawUrl)}#${hash}`;
 }
 
