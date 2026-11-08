@@ -369,7 +369,9 @@ async function checkApiKey() {
 
 function normalizeNumberOnSearch(value) {
   const raw = String(value || '').trim();
-  if (!/^[0-9०-९]+\\.?$/.test(raw)) return raw;
+  // Only convert a number of 1–3 digits when Search is pressed.
+  // Free typing is untouched; 23 -> २३. and 111 -> १११.
+  if (!/^[0-9०-९]{1,3}\\.?$/.test(raw)) return raw;
   const digits = raw.replace(/\\.$/, '').replace(/[0-9]/g, d => '०१२३४५६७८९'[Number(d)]);
   return digits + '.';
 }
@@ -379,10 +381,15 @@ async function doSearch(type) {
   
   if (type === 'specific') {
     const dhara = normalizeNumberOnSearch($('#input-dhara').value);
+    $('#input-dhara').value = dhara;
     const dafa = normalizeNumberOnSearch($('#input-dafa').value);
+    $('#input-dafa').value = dafa;
     const niyam = normalizeNumberOnSearch($('#input-niyam').value);
+    $('#input-niyam').value = niyam;
     const nirdeshan = normalizeNumberOnSearch($('#input-nirdeshan').value);
+    $('#input-nirdeshan').value = nirdeshan;
     const anusuchi = normalizeNumberOnSearch($('#input-anusuchi').value);
+    $('#input-anusuchi').value = anusuchi;
     const general = $('#input-general').value.trim();
     
     if (!dhara && !dafa && !niyam && !nirdeshan && !anusuchi && !general) {
