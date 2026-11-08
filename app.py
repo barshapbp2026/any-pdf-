@@ -191,34 +191,77 @@ def serve_pdf(filepath):
         return pdf_data, 200, {'Content-Type': 'application/pdf'}
     return "PDF File not found", 404
 
-@app.route("/pdf-highlight/<path:filepath>")
+@app.route("/pdf-highlight/<path:filepath>", methods=["GET", "OPTIONS"])
 def serve_pdf_with_header_highlight(filepath):
-    """Return the requested PDF with only its matching heading highlighted dark red."""
+    """Serve a PDF with only the matching numbered main heading highlighted dark red."""
+    if request.method == "OPTIONS":
+        response = app.make_response(("", 204))
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Range"
+        return response
+
     pdf_data = get_pdf_bytes_from_github(filepath)
     if not pdf_data:
         return "PDF File not found", 404
 
     page_number = request.args.get("page", default=1, type=int)
-    heading = (request.args.get("snippet") or "").splitlines()[0].strip()[:240]
+    heading = (request.args.get("snippet") or "").splitlines()[0].strip()
+    # Identify the main heading number immediately followed by a dot (e.g. १२.)
+    number_match = re.match(r"^([0-9०-९]{1,3})\.(?![0-9०-९])", heading)
     try:
         doc = fitz.open(stream=pdf_data, filetype="pdf")
         if page_number < 1 or page_number > len(doc):
             doc.close()
             return "Invalid PDF page", 400
 
-        if heading:
-            page = doc[page_number - 1]
-            # Search only the result's heading line; never highlight the section body.
-            matches = page.search_for(heading)
-            if matches:
-                annotation = page.add_highlight_annot(matches)
-                annotation.set_colors(stroke=(0.55, 0.0, 0.0))
-                annotation.set_opacity(0.55)
-                annotation.update()
+        page = doc[page_number - 1]
+        highlighted = False
+
+        if number_match:
+            wanted = number_match.group(1).translate(str.maketrans("0123456789", "०१२३४५६७८९"))
+            # Inspect individual PDF text lines and highlight only the line whose
+            # first characters are the requested main number followed by a dot.
+            text_dict = page.get_text("dict")
+            for block in text_dict.get("blocks", []):
+                for line in block.get("lines", []):
+                    line_text = "".join(span.get("text", "") for span in line.get("spans", [])).strip()
+                    line_match = re.match(r"^([0-9०-९]{1,3})\.(?![0-9०-९])", line_text)
+                    if not line_match:
+                        continue
+                    line_number = line_match.group(1).translate(str.maketrans("0123456789", "०१२३४५६७८९"))
+                    if line_number == wanted:
+                        rect = fitz.Rect(line.get("bbox", (0, 0, 0, 0)))
+                        if not rect.is_empty:
+                            annot = page.add_highlight_annot(rect)
+                            annot.set_colors(stroke=(0.55, 0.0, 0.0))
+                            annot.set_opacity(0.65)
+                            annot.update()
+                            highlighted = True
+                        break
+                if highlighted:
+                    break
+        elif heading:
+            # For non-numbered text searches, retain a single-line-only fallback.
+            rects = page.search_for(heading[:180])
+            if rects:
+                annot = page.add_highlight_annot(rects)
+                annot.set_colors(stroke=(0.55, 0.0, 0.0))
+                annot.set_opacity(0.65)
+                annot.update()
+                highlighted = True
 
         output = doc.tobytes()
         doc.close()
-        return output, 200, {"Content-Type": "application/pdf"}
+        response = app.make_response((output, 200))
+        response.headers["Content-Type"] = "application/pdf"
+        response.headers["Content-Disposition"] = 'inline; filename="highlighted.pdf"'
+        # Required because the hosted PDF.js viewer is on a different origin.
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Expose-Headers"] = "Accept-Ranges, Content-Length, Content-Range"
+        response.headers["Accept-Ranges"] = "bytes"
+        response.headers["Cache-Control"] = "no-store"
+        return response
     except Exception as e:
         print(f"[serve_pdf_with_header_highlight] Error: {e}")
         return "Could not prepare highlighted PDF", 500
