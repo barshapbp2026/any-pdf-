@@ -37,7 +37,6 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
             for page_num in range(len(doc)):
                 for line in page_text_unicode(doc[page_num]).splitlines():
                     all_lines.append((page_num + 1, line.strip()))
-            candidates = []
             for i, (page_num, line) in enumerate(all_lines):
                 match = target_pattern.match(line)
                 if not match or len(match.group(1).strip()) < 3:
@@ -52,18 +51,14 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
                     if sum(len(x) for x in section_lines) >= 5000:
                         break
                 section_text = " ".join(section_lines)
-                candidates.append({
+                results.append({
                     "page": page_num,
                     "section": f"{expected_prefix} {digits}",
                     "snippet": line[:240],
-                    "highlight_text": section_text[:5000],
-                    "_length": len(section_text)
+                    "highlight_text": section_text[:5000]
                 })
-            # If this number appears multiple times, keep the longest section.
-            if candidates:
-                best = max(candidates, key=lambda item: item["_length"])
-                best.pop("_length", None)
-                results.append(best)
+                if len(results) >= max_results:
+                    break
         else:
             clean_q = search_key(query)
             for page_num in range(len(doc)):
