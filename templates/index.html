@@ -452,9 +452,10 @@ function renderResults(results, query) {
       const auditLabel = m.bold && m.underlined ? 'Bold + Underlined' :
                          m.bold ? 'Bold header' :
                          m.underlined ? 'Underlined header' : 'Longest header';
+      const ocrLabel = m.ocr ? '<span class="badge">OCR detected</span>' : '';
       html += `<div class="result-item">
         <div class="meta">${sec} पृष्ठ <strong>${m.page}</strong>
-          <span class="badge">${auditLabel}</span>
+          <span class="badge">${auditLabel}</span>${ocrLabel}
           <a href="${pageUrl}" target="_blank" rel="noopener" style="margin-left:auto">
             <button class="small">हेडर हाइलाइटसहित देखाउनुहोस् →</button>
           </a>
