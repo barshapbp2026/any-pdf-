@@ -230,7 +230,7 @@ def search_anusuchi_tables(pdf_bytes, query, max_results=30):
 
 def collect_results(queries, mode="all", target="", targets=[], anusuchi_query=""):
     all_files = get_github_pdfs()
-    
+
     if mode == "specific" and target:
         files_to_search = [target]
     elif mode in ["folder", "folders"] and targets:
@@ -238,23 +238,55 @@ def collect_results(queries, mode="all", target="", targets=[], anusuchi_query="
     else:
         files_to_search = all_files
 
-    out = []
+    # Keep an audit pool per query so a numeric heading is selected across
+    # the complete requested scope, not independently from every PDF.
+    audited = {}
+    ordinary = []
     for f in files_to_search:
         try:
             pdf_data = get_pdf_bytes_from_github(f)
             folder_context = f.split('/')[0] if '/' in f else ""
-            
-            if pdf_data:
-                for q in queries:
-                    matches = (search_anusuchi_tables(pdf_data, anusuchi_query)
-                               if anusuchi_query and q == anusuchi_query
-                               else search_in_pdf_bytes(pdf_data, q, folder_context)) 
-                    if matches:
-                        if not any(x['filename'] == f and x['matches'] == matches for x in out):
-                            out.append({"filename": f, "matches": matches, "query": q})
+            if not pdf_data:
+                continue
+
+            for q in queries:
+                matches = (search_anusuchi_tables(pdf_data, anusuchi_query)
+                           if anusuchi_query and q == anusuchi_query
+                           else search_in_pdf_bytes(pdf_data, q, folder_context))
+                if not matches:
+                    continue
+
+                numeric_query = re.fullmatch(r"\s*[0-9०-९]+\s*\.?\s*", q or "")
+                if numeric_query:
+                    for match in matches:
+                        match = dict(match)
+                        match["filename"] = f
+                        match["query"] = q
+                        audited.setdefault(q, []).append(match)
+                else:
+                    ordinary.append({"filename": f, "matches": matches, "query": q})
         except Exception as e:
             print(f"Error processing {f}: {e}")
-    return out
+
+    # Final rule: styled (bold/underlined) headings win; among eligible
+    # styled headings choose the longest title. If none are styled, use
+    # the longest extracted heading title as the fallback.
+    for q, candidates in audited.items():
+        styled = [m for m in candidates if m.get("bold") or m.get("underlined")]
+        pool = styled if styled else candidates
+        if pool:
+            chosen = max(pool, key=lambda m: (
+                len(m.get("header_text") or m.get("snippet") or ""),
+                bool(m.get("bold")),
+                bool(m.get("underlined"))
+            ))
+            ordinary.append({
+                "filename": chosen.pop("filename"),
+                "matches": [chosen],
+                "query": q
+            })
+
+    return ordinary
 
 @app.route("/")
 def index():
