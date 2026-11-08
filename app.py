@@ -163,7 +163,13 @@ def extract_header_lines(page):
             if size > 0:
                 sizes.append(size)
             bold = any((int(s.get("flags", 0)) & 16) != 0 or "bold" in s.get("font", "").lower() for s in spans)
-            numbered = bool(re.match(r"^\s*(?:(?:धारा|दफा|नियम|अनुसूची|भाग|परिच्छेद)\s*[०-९0-9]+|[०-९0-9]+\s*[.)।:-])", value))
+            numbered = bool(re.match(
+                r"^\s*(?:[धारा|दफा|नियम|अनुसूची|भाग|परिच्छेद]*\s*[०-९0-9]+|"
+                r"[०-९0-9]+\s*[क-ह]?\s*\.(?![०-९0-9]))",
+                value.lstrip("\\uf0aa\\uf076\\uf077\\uf0a7")
+            ))
+            schedule_heading = bool(re.match(r"^\\s*अि?ुसूची\\s*[-–]?\\s*[०-९0-9]+", value))
+            numbered = numbered or schedule_heading
             raw_lines.append({"text": value, "size": size, "bold": bold, "numbered": numbered})
     if not raw_lines:
         return []
