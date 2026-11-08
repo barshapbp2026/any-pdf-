@@ -167,19 +167,6 @@ const GITHUB_REPO = "barshapbp2026/any-pdf-";
 const GITHUB_BRANCH = "main";
 
 
-/* Numeric legal-search inputs: 5 / ५ becomes ५. immediately.
-   Do not alter the API-key or natural-language chat input. */
-document.addEventListener('input', function (event) {
-  const el = event.target;
-  if (!el.matches('.search-grid input, .folder-query')) return;
-  const value = el.value.trim();
-  if (!/^[0-9०-९]+\.?$/.test(value)) return;
-  const ascii = value.replace(/\./g, '').replace(/[०-९]/g,
-    d => String('०१२३४५६७८९'.indexOf(d)));
-  const nepali = ascii.replace(/[0-9]/g, d => '०१२३४५६७८९'[Number(d)]);
-  el.value = nepali + '.';
-  el.setSelectionRange(el.value.length, el.value.length);
-});
 
 function cleanName(name) { return name.replace(/\.pdf$/i, ''); }
 
@@ -380,15 +367,22 @@ async function checkApiKey() {
     }
 }
 
+function normalizeNumberOnSearch(value) {
+  const raw = String(value || '').trim();
+  if (!/^[0-9०-९]+\\.?$/.test(raw)) return raw;
+  const digits = raw.replace(/\\.$/, '').replace(/[0-9]/g, d => '०१२३४५६७८९'[Number(d)]);
+  return digits + '.';
+}
+
 async function doSearch(type) {
   let payload = { mode: type };
   
   if (type === 'specific') {
-    const dhara = $('#input-dhara').value.trim();
-    const dafa = $('#input-dafa').value.trim();
-    const niyam = $('#input-niyam').value.trim();
-    const nirdeshan = $('#input-nirdeshan').value.trim();
-    const anusuchi = $('#input-anusuchi').value.trim();
+    const dhara = normalizeNumberOnSearch($('#input-dhara').value);
+    const dafa = normalizeNumberOnSearch($('#input-dafa').value);
+    const niyam = normalizeNumberOnSearch($('#input-niyam').value);
+    const nirdeshan = normalizeNumberOnSearch($('#input-nirdeshan').value);
+    const anusuchi = normalizeNumberOnSearch($('#input-anusuchi').value);
     const general = $('#input-general').value.trim();
     
     if (!dhara && !dafa && !niyam && !nirdeshan && !anusuchi && !general) {
