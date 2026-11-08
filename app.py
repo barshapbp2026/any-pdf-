@@ -281,27 +281,48 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30, all
                 for block in page_dict.get("blocks", []):
                     for line in block.get("lines", []):
                         spans = line.get("spans", [])
-                        line_text = "".join(sp.get("text", "") for sp in spans).strip()
+                        raw_line_text = "".join(sp.get("text", "") for sp in spans)
+                        # Remove PDF marker glyphs before matching, but retain their
+                        # original character offset so number/title styles stay aligned.
+                        trim_chars = len(raw_line_text) - len(
+                            raw_line_text.lstrip("\uf0aa\uf076\uf077\uf0a7 \t\r\n")
+                        )
+                        line_text = raw_line_text[trim_chars:].strip()
                         line_text = re.sub(r"(?<=[0-9०-९])\s+(?=\.)", "", line_text)
-                        line_text = line_text.lstrip("\uf0aa\uf076\uf077\uf0a7").strip()
                         if not line_text:
                             continue
                         line_bbox = fitz.Rect(line.get("bbox", (0, 0, 0, 0)))
-                        is_bold = any(
-                            (int(sp.get("flags", 0)) & 16) != 0
-                            or "bold" in (sp.get("font", "").lower())
-                            for sp in spans
-                        )
-                        is_underlined = any(
-                            line_bbox.y1 - 1 <= y0 <= line_bbox.y1 + 4
-                            and x1 >= line_bbox.x0 and x0 <= line_bbox.x1
-                            and (x1 - x0) >= min(8, line_bbox.width * 0.25)
-                            for x0, x1, y0, y1, shape_height in underline_shapes
-                        )
+                        span_styles = []
+                        char_pos = 0
+                        for sp in spans:
+                            span_text = sp.get("text", "")
+                            span_end = char_pos + len(span_text)
+                            span_bbox = fitz.Rect(sp.get("bbox", (0, 0, 0, 0)))
+                            span_bold = (
+                                (int(sp.get("flags", 0)) & 16) != 0
+                                or "bold" in (sp.get("font", "").lower())
+                            )
+                            # Underlines in PDFs are often drawn 3-7 points above
+                            # the text bbox bottom, not directly on the baseline.
+                            span_underlined = any(
+                                span_bbox.y1 - 7 <= y0 <= span_bbox.y1 + 4
+                                and x1 >= span_bbox.x0 and x0 <= span_bbox.x1
+                                and (x1 - x0) >= min(6, max(2, span_bbox.width * 0.20))
+                                for x0, x1, y0, y1, shape_height in underline_shapes
+                            )
+                            span_styles.append({
+                                "start": char_pos, "end": span_end,
+                                "bold": span_bold, "underlined": span_underlined
+                            })
+                            char_pos = span_end
 
+                        is_bold = any(item["bold"] for item in span_styles)
+                        is_underlined = any(item["underlined"] for item in span_styles)
                         page_lines.append({
                             "text": line_text,
                             "spans": spans,
+                            "span_styles": span_styles,
+                            "trim_chars": trim_chars,
                             "bold": is_bold,
                             "underlined": is_underlined,
                             "font_size": max((float(sp.get("size", 0)) for sp in spans), default=0),
@@ -329,25 +350,19 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30, all
                     header_bold = False
                     header_underlined = False
 
-                    # Treat the number and title as independent text spans.
+                    # Classify number and title styles separately. Account for
+                    # marker glyphs stripped from the visible line before matching.
                     prefix_length = len(match.group(0)) - len(match.group(2))
-                    char_pos = 0
-                    for span in line.get("spans", []):
-                        span_text = span.get("text", "")
-                        span_end = char_pos + len(span_text)
-                        span_bold = (
-                            (int(span.get("flags", 0)) & 16) != 0
-                            or "bold" in span.get("font", "").lower()
-                        )
-                        if char_pos < prefix_length and span_end > 0 and span_bold:
+                    title_start = int(line.get("trim_chars", 0)) + prefix_length
+                    for style in line.get("span_styles", []):
+                        if style["start"] < title_start and style["end"] > line.get("trim_chars", 0) and style["bold"]:
                             number_bold = True
-                        if span_end > prefix_length and span_bold:
-                            header_bold = True
-                        char_pos = span_end
+                        if style["end"] > title_start:
+                            header_bold = header_bold or style["bold"]
+                            header_underlined = header_underlined or style["underlined"]
 
                     if first_title:
                         title_parts.append(first_title)
-                        header_underlined = bool(line["underlined"])
                     else:
                         # Number-only line: get style only from the title line.
                         for following in page_lines[i + 1:]:
@@ -355,8 +370,8 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30, all
                                 break
                             if following["text"]:
                                 title_parts.append(following["text"])
-                                header_bold = bool(following["bold"])
-                                header_underlined = bool(following["underlined"])
+                                header_bold = any(x["bold"] for x in following.get("span_styles", []))
+                                header_underlined = any(x["underlined"] for x in following.get("span_styles", []))
                                 if len(" ".join(title_parts)) >= 500:
                                     break
                             if title_parts:
