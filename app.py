@@ -838,29 +838,51 @@ def chat():
     
     results = collect_results(queries, mode, target, targets)
     
-    # भेटिएका पेजहरूको पूरा टेक्स्ट (र अर्को पेज पनि, किनकि दफा पेज पार गर्न सक्छ) Gemini लाई पठाउने
-    ctx_parts = []
-    total_chars = 0
-    MAX_CHARS = 60000
-    for g in results[:4]:
-        pdf_data = get_pdf_bytes_from_github(g["filename"])
+    # Gemini ले चयन गरिएको PDF का सबै पृष्ठ पढोस्; header-search result पृष्ठमा मात्र सीमित नगरौँ।
+    all_files = get_github_pdfs()
+    if mode == "specific" and target:
+        chat_files = [target]
+    elif mode in ["folder", "folders"] and targets:
+        chat_files = [f for f in all_files if any(f.startswith(t + "/") or f == t for t in targets)]
+    else:
+        chat_files = all_files
+
+    # प्रश्नसँग PDF को body text कति मिल्छ भनेर relevant PDF पहिले राख्ने।
+    query_keys = [search_key(q) for q in queries if search_key(q)]
+    documents = []
+    for filename in chat_files:
+        pdf_data = get_pdf_bytes_from_github(filename)
         if not pdf_data:
             continue
         try:
             doc = fitz.open(stream=pdf_data, filetype="pdf")
         except Exception:
             continue
-        seen = set()
-        for m in g["matches"][:3]:
-            for p in (m["page"], m["page"] + 1):
-                if p in seen or p > len(doc) or total_chars > MAX_CHARS:
-                    continue
-                seen.add(p)
-                txt = page_text_unicode(doc[p - 1]).strip()
-                total_chars += len(txt)
-                ctx_parts.append(f"===== [PDF: {g['filename']} | पृष्ठ {p} | {m['section']}] =====\n{txt}")
+        page_texts = [page_text_unicode(page).strip() for page in doc]
+        full_key = search_key("\n".join(page_texts))
+        relevance = sum(1 for qk in query_keys if qk in full_key)
+        documents.append((relevance, filename, page_texts))
         doc.close()
-    context_str = "\n\n".join(ctx_parts) if ctx_parts else "कुनै मिल्दो सामग्री भेटिएन।"
+
+    documents.sort(key=lambda item: item[0], reverse=True)
+    ctx_parts = []
+    total_chars = 0
+    MAX_CHARS = 60000
+    for relevance, filename, page_texts in documents[:4]:
+        for page_number, txt in enumerate(page_texts, start=1):
+            if total_chars >= MAX_CHARS:
+                break
+            if not txt:
+                continue
+            remaining = MAX_CHARS - total_chars
+            txt = txt[:remaining]
+            total_chars += len(txt)
+            ctx_parts.append(
+                f"===== [PDF: {filename} | पृष्ठ {page_number}] =====\n{txt}"
+            )
+        if total_chars >= MAX_CHARS:
+            break
+    context_str = "\n\n".join(ctx_parts) if ctx_parts else "चयन गरिएको PDF मा पढ्न मिल्ने टेक्स्ट भेटिएन।"
 
     prompt = (
         "तपाईं नेपाली कानुनी सहायक हुनुहुन्छ। तल दिइएको PDF सामग्रीको आधारमा मात्र जवाफ दिनुहोस्; "
