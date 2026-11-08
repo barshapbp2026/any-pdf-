@@ -124,7 +124,8 @@ def _ocr_numbered_headers(page, page_num, target_pattern, any_heading_pattern, d
                 "bold": bool(style_bold),
                 "underlined": bool(style_underlined),
                 "ocr": True,
-                "header_length": len(title)
+                "header_length": len(title),
+                "sequence_score": 0
             })
         return candidates
     except Exception as e:
@@ -158,6 +159,7 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
             )
             any_heading_pattern = re.compile(r"^\s*[०-९0-9]+\s*\.(?![०-९0-9])")
             candidates = []
+            document_heading_numbers = []
 
             for page_num in range(len(doc)):
                 page = doc[page_num]
@@ -211,6 +213,16 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
                             "underlined": is_underlined
                         })
 
+                for order_index, detected_line in enumerate(page_lines):
+                    detected_match = any_heading_pattern.match(detected_line["text"])
+                    if detected_match:
+                        detected_digits = detected_match.group(0).strip().rstrip(".").strip()
+                        detected_digits = detected_digits.translate(str.maketrans("०१२३४५६७८९", "0123456789"))
+                        try:
+                            document_heading_numbers.append((int(detected_digits), page_num, order_index))
+                        except ValueError:
+                            pass
+
                 for i, line in enumerate(page_lines):
                     match = target_pattern.match(line["text"])
                     if not match:
@@ -248,8 +260,26 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
                         "header_text": header_text,
                         "bold": bool(style_bold),
                         "underlined": bool(style_underlined),
-                        "header_length": len(header_title)
+                        "header_length": len(header_title),
+                        "number_value": int(ascii_digits)
                     })
+
+            # Score whether the target heading follows N-1 and precedes N+1
+            # in the PDF's actual numbered-heading reading order.
+            for candidate in candidates:
+                try:
+                    target_num = int(ascii_digits)
+                    positions = [i for i, item in enumerate(document_heading_numbers)
+                                 if item[0] == target_num]
+                    best_sequence = 0
+                    for pos in positions:
+                        prev_num = document_heading_numbers[pos - 1][0] if pos > 0 else None
+                        next_num = document_heading_numbers[pos + 1][0] if pos + 1 < len(document_heading_numbers) else None
+                        score = (1 if prev_num == target_num - 1 else 0) + (1 if next_num == target_num + 1 else 0)
+                        best_sequence = max(best_sequence, score)
+                    candidate["sequence_score"] = best_sequence
+                except Exception:
+                    candidate["sequence_score"] = 0
 
             # If native PDF text extraction found no numbered heading, OCR every page.
             # This catches scanned PDFs whose pages contain only images.
@@ -261,16 +291,9 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
                     ))
 
             if candidates:
-                # First prefer bold/underlined headings; if none exist, choose
-                # the candidate with the longest actual header title.
-                styled = [c for c in candidates if c["bold"] or c["underlined"]]
-                pool = styled if styled else candidates
-                chosen = max(
-                    pool,
-                    key=lambda c: (c["header_length"], c["bold"], c["underlined"])
-                )
-                chosen.pop("header_length", None)
-                results.append(chosen)
+                for candidate in candidates:
+                    candidate.pop("number_value", None)
+                    results.append(candidate)
         else:
             clean_q = search_key(query)
             for page_num in range(len(doc)):
@@ -396,17 +419,16 @@ def collect_results(queries, mode="all", target="", targets=[], anusuchi_query="
         except Exception as e:
             print(f"Error processing {f}: {e}")
 
-    # Final rule: styled (bold/underlined) headings win; among eligible
-    # styled headings choose the longest title. If none are styled, use
-    # the longest extracted heading title as the fallback.
+    # Strict audit priority:
+    # 1) bold, 2) underlined, 3) correct N-1 -> N -> N+1 flow,
+    # 4) longest extracted header title.
     for q, candidates in audited.items():
-        styled = [m for m in candidates if m.get("bold") or m.get("underlined")]
-        pool = styled if styled else candidates
-        if pool:
-            chosen = max(pool, key=lambda m: (
-                len(m.get("header_text") or m.get("snippet") or ""),
+        if candidates:
+            chosen = max(candidates, key=lambda m: (
                 bool(m.get("bold")),
-                bool(m.get("underlined"))
+                bool(m.get("underlined")),
+                int(m.get("sequence_score", 0)),
+                len(m.get("header_text") or m.get("snippet") or "")
             ))
             ordinary.append({
                 "filename": chosen.pop("filename"),
