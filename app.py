@@ -13,7 +13,7 @@ GITHUB_REPO = "barshapbp2026/any-pdf-"
 GITHUB_BRANCH = "main"
 
 def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
-    """For numeric queries, return only real numbered main-heading lines, not incidental number mentions."""
+    """Numeric search returns the complete numbered section up to the next numbered heading."""
     results = []
     numeric_match = re.fullmatch(r"\s*([0-9०-९]+)\.?\s*", query or "")
     expected_prefix = "दफा"
@@ -28,69 +28,43 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30):
     try:
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         if numeric_match:
-            digits = numeric_match.group(1).translate(str.maketrans(
-                "0123456789", "०१२३४५६७८९"
-            ))
+            digits = numeric_match.group(1).translate(str.maketrans("0123456789", "०१२३४५६७८९"))
             ascii_digits = digits.translate(str.maketrans("०१२३४५६७८९", "0123456789"))
-            # Accept either Nepali or English digit glyphs, but never a suffix of 23 when searching 3.
-            heading_pattern = re.compile(
-                r"^\s*(?:" + re.escape(digits) + r"|" + re.escape(ascii_digits) +
-                r")\.(?![0-9०-९])\s*(.*)$"
-            )
+            target_pattern = re.compile(r"^\s*(?:" + re.escape(digits) + r"|" +
+                                        re.escape(ascii_digits) + r")\.(?![0-9०-९])\s*(.*)$")
+            any_heading_pattern = re.compile(r"^\s*[०-९0-9]{1,3}\.(?![०-९0-9])\s*\S")
+            all_lines = []
             for page_num in range(len(doc)):
-                page = doc[page_num]
-                extracted_lines = []
-                page_dict = page.get_text("dict")
-                for block in page_dict.get("blocks", []):
-                    for line in block.get("lines", []):
-                        spans = line.get("spans", [])
-                        extracted_lines.append({
-                            "bold": any((sp.get("flags", 0) & 16) or
-                                        "bold" in sp.get("font", "").lower()
-                                        for sp in spans),
-                            "font_size": max([sp.get("size", 0) for sp in spans] or [0])
-                        })
-
-                # Keep Unicode/Preeti conversion consistent with the app's existing extractor.
-                text_lines = page_text_unicode(page).splitlines()
-                sizes = sorted(x["font_size"] for x in extracted_lines if x["font_size"] > 0)
-                median_size = sizes[len(sizes) // 2] if sizes else 0
-
-                for index, line_text in enumerate(text_lines):
-                    match = heading_pattern.match(line_text)
-                    if not match:
-                        continue
-                    title = match.group(1).strip()
-                    # A bare "५." is usually a page/TOC marker, not a heading.
-                    if len(title) < 3:
-                        continue
-                    style = extracted_lines[index] if index < len(extracted_lines) else {}
-                    is_bold = style.get("bold", False)
-                    font_size = style.get("font_size", 0)
-                    # Prefer bold or visibly prominent headings; also allow concise plain-text headings.
-                    prominent = median_size and font_size >= median_size * 1.08
-                    concise_heading = len(title) <= 120 and not re.search(r"[।!?;]$", title)
-                    if not (is_bold or prominent or concise_heading):
-                        continue
-                    results.append({
-                        "page": page_num + 1,
-                        "section": f"{expected_prefix} {digits}",
-                        "snippet": line_text.strip()[:240]
-                    })
-                    break
+                for line in page_text_unicode(doc[page_num]).splitlines():
+                    all_lines.append((page_num + 1, line.strip()))
+            for i, (page_num, line) in enumerate(all_lines):
+                match = target_pattern.match(line)
+                if not match or len(match.group(1).strip()) < 3:
+                    continue
+                # Extract this heading and its body until the next numbered main heading.
+                section_lines = [line]
+                for _, following in all_lines[i + 1:]:
+                    if any_heading_pattern.match(following):
+                        break
+                    if following:
+                        section_lines.append(following)
+                    if sum(len(x) for x in section_lines) >= 5000:
+                        break
+                section_text = " ".join(section_lines)
+                results.append({
+                    "page": page_num,
+                    "section": f"{expected_prefix} {digits}",
+                    "snippet": line[:240],
+                    "highlight_text": section_text[:5000]
+                })
                 if len(results) >= max_results:
                     break
         else:
             clean_q = search_key(query)
             for page_num in range(len(doc)):
-                page_text = page_text_unicode(doc[page_num])
-                for line in page_text.splitlines():
+                for line in page_text_unicode(doc[page_num]).splitlines():
                     if clean_q and clean_q in search_key(line):
-                        results.append({
-                            "page": page_num + 1,
-                            "section": "सन्दर्भ",
-                            "snippet": line.strip()[:200]
-                        })
+                        results.append({"page": page_num + 1, "section": "सन्दर्भ", "snippet": line.strip()[:200]})
                         break
                 if len(results) >= max_results:
                     break
