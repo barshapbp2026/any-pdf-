@@ -371,9 +371,8 @@ async function checkApiKey() {
 function normalizeNumberOnSearch(value) {
   const raw = String(value || '').trim();
   // Accept any length of Arabic or Devanagari digits, with an optional trailing dot.
-  // Normalize to Nepali digits and append exactly one dot for numbered-section search.
-  if (!/^[0-9०-९]+\\.?$/.test(raw)) return raw;
-  const digits = raw.replace(/\\.$/, '').replace(/[0-9]/g, d => '०१२३४५६७८९'[Number(d)]);
+  if (!/^[0-9०-९]+\.?$/.test(raw)) return raw;
+  const digits = raw.replace(/\.$/, '').replace(/[0-9]/g, d => '०१२३४५६७८९'[Number(d)]);
   return digits ? digits + '.' : raw;
 }
 
