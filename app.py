@@ -169,8 +169,8 @@ def extract_header_lines(page):
                 r"[०-९0-9]+\\s*[क-ह]?\\s*\\.(?![०-९0-9]))",
                 clean_heading
             ))
-            schedule_heading = bool(re.match(
-                r"^\\s*(?:अनुसूची|अिुसूची)\\s*[-–]?\\s*[०-९0-9]+",
+            schedule_heading = bool(re.fullmatch(
+                r"\\s*(?:अनुसूची|अिुसूची)\\s*[-–]?\\s*[०-९0-9]+\\s*",
                 clean_heading
             ))
             numbered = numbered or schedule_heading
@@ -207,6 +207,14 @@ def _header_similarity(query_key, header_key):
         return 0.0
     if query_key in header_key:
         return 1.0
+    # Never fuzzy-match a different legal/schedule number.
+    query_numbers = re.findall(r"[०-९0-9]+", query_key)
+    header_numbers = re.findall(r"[०-९0-9]+", header_key)
+    if query_numbers and not any(
+        header_numbers[i:i + len(query_numbers)] == query_numbers
+        for i in range(len(header_numbers) - len(query_numbers) + 1)
+    ):
+        return 0.0
     if len(query_key) < 3:
         return 0.0
     best = difflib.SequenceMatcher(None, query_key, header_key).ratio()
