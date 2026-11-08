@@ -409,7 +409,7 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30, all
                         title_text = first_title
                         colon = re.search(r"[ः:]", title_text)
                         header_title = title_text[:colon.end()] if colon else title_text
-                    header_title = re.sub(r"\\s+", " ", header_title).strip()
+                    header_title = re.sub(r"\s+", " ", header_title).strip()
                     if not header_title:
                         continue
 
