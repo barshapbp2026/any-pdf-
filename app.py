@@ -6,7 +6,8 @@ import time
 from flask import Flask, render_template, request, jsonify
 import fitz
 from dotenv import load_dotenv
-from nepali_text import (page_text_unicode, search_key, convert_preeti, is_legacy_font, _DEVA, _URL)
+# अपडेट गरिएको nepali_text बाट clean_extracted_text पनि इम्पोर्ट गरिएको छ
+from nepali_text import (page_text_unicode, search_key, convert_preeti, is_legacy_font, _DEVA, _URL, clean_extracted_text)
 
 load_dotenv() 
 app = Flask(__name__)
@@ -27,7 +28,6 @@ def _ocr_numbered_headers(page, page_num, target_pattern, any_heading_pattern, d
                 output_type=pytesseract.Output.DICT
             )
         except Exception:
-            # If Nepali traineddata is unavailable, still attempt English digits/text.
             ocr = pytesseract.image_to_data(
                 image, lang="eng", config="--psm 6",
                 output_type=pytesseract.Output.DICT
@@ -57,7 +57,6 @@ def _ocr_numbered_headers(page, page_num, target_pattern, any_heading_pattern, d
         for words in grouped.values():
             words.sort(key=lambda w: w["left"])
             text = " ".join(w["text"] for w in words)
-            # Tesseract may output Devanagari digits or ASCII digits.
             text = re.sub(r"(?<=[0-9०-९])\s+(?=\.)", "", text).strip()
             if not text:
                 continue
@@ -66,13 +65,11 @@ def _ocr_numbered_headers(page, page_num, target_pattern, any_heading_pattern, d
             x1 = max(w["left"] + w["width"] for w in words)
             y1 = max(w["top"] + w["height"] for w in words)
 
-            # Estimate boldness from ink density inside the OCR text crop.
             crop = image.convert("L").crop((x0, y0, x1, y1))
             pixels = list(crop.getdata())
             ink_ratio = (sum(1 for px in pixels if px < 100) / max(1, len(pixels)))
             is_bold = ink_ratio >= 0.22
 
-            # Detect a continuous horizontal underline immediately below text.
             gray = image.convert("L")
             underline = False
             scan_y0 = min(gray.height, max(0, y1 - 1))
@@ -102,8 +99,6 @@ def _ocr_numbered_headers(page, page_num, target_pattern, any_heading_pattern, d
             if not match:
                 continue
             title_parts = []
-            style_bold = line["bold"]
-            style_underlined = line["underlined"]
             if match.group(2).strip():
                 title_parts.append(match.group(2).strip())
             else:
@@ -111,15 +106,11 @@ def _ocr_numbered_headers(page, page_num, target_pattern, any_heading_pattern, d
                     if any_heading_pattern.match(following["text"]):
                         break
                     title_parts.append(following["text"])
-                    style_bold = style_bold or following["bold"]
-                    style_underlined = style_underlined or following["underlined"]
                     break
             title = re.sub(r"\s+", " ", " ".join(title_parts)).strip()
             if not title:
                 continue
             header = f"{digits}. {title}"
-            # OCR is only the final longest-header fallback; its visual
-            # estimates must not decide bold or underline ranking.
             candidates.append({
                 "page": page_num + 1,
                 "section": f"{expected_prefix} {digits}",
@@ -209,7 +200,6 @@ def _header_similarity(query_key, header_key):
         return 0.0
     if query_key in header_key:
         return 1.0
-    # Never fuzzy-match a different legal/schedule number.
     query_numbers = re.findall(r"[०-९0-9]+", query_key)
     header_numbers = re.findall(r"[०-९0-9]+", header_key)
     if query_numbers and not any(
@@ -224,7 +214,6 @@ def _header_similarity(query_key, header_key):
         for start in range(0, len(header_key) - width + 1):
             best = max(best, difflib.SequenceMatcher(None, query_key, header_key[start:start + width]).ratio())
     return best
-
 
 def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30, allow_ocr=False):
     """Audit all matching numbered headings and return the strongest single header."""
@@ -258,8 +247,6 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30, all
             for page_num in range(len(doc)):
                 page = doc[page_num]
                 page_dict = page.get_text("rawdict")
-                # Extract underline geometry once per page. The old code rescanned
-                # every drawing for every text line, causing very slow numbered searches.
                 drawings = page.get_drawings()
                 underline_shapes = []
                 for drawing in drawings:
@@ -284,8 +271,6 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30, all
                         raw_line_text = "".join(
                             ch.get("c", "") for sp in spans for ch in sp.get("chars", [])
                         )
-                        # Remove PDF marker glyphs before matching, but retain their
-                        # original character offset so number/title styles stay aligned.
                         trim_chars = len(raw_line_text) - len(
                             raw_line_text.lstrip("\uf0aa\uf076\uf077\uf0a7 \t\r\n")
                         )
@@ -352,9 +337,6 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30, all
                     header_bold = False
                     header_underlined = False
 
-                    # Use character-level style boundaries: PDF headings and body
-                    # text are often in the same text line/span but only the heading
-                    # words are actually underlined or bold.
                     prefix_length = len(match.group(0)) - len(match.group(2))
                     title_start = int(line.get("trim_chars", 0)) + prefix_length
                     line_styles = line.get("char_styles", [])
@@ -381,8 +363,6 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30, all
 
                     title_line = line
                     if not first_title:
-                        # Number and title may be separate PDF text blocks on the
-                        # same baseline. Pair by geometry, never by next paragraph.
                         same_baseline = [
                             item for item in page_lines[i + 1:]
                             if abs(float(item.get("y0", 9999)) - float(line.get("y0", 0))) <= 2.5
@@ -402,8 +382,6 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30, all
                     header_bold = bool(bold_prefix)
                     header_bold_underlined = bool(both_prefix)
 
-                    # Header title ends at its visual style boundary. If the PDF
-                    # has no style boundary, stop at the legal heading colon where present.
                     header_title = both_prefix or underlined_prefix or bold_prefix
                     if not header_title:
                         title_text = first_title
@@ -433,8 +411,6 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30, all
                         "heading_order": next((idx for idx, entry in enumerate(document_heading_numbers) if entry[1] == page_num and entry[2] == i), -1)
                     })
 
-            # Score N-1 -> N -> N+1 only among headings at the
-            # same visual level (similar font size and left indentation).
             for candidate in candidates:
                 try:
                     target_num = int(ascii_digits)
@@ -485,7 +461,6 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30, all
         else:
             clean_q = search_key(query)
             threshold = 0.78 if len(clean_q) >= 5 else 0.86
-            # Search extracted headings only; ordinary body paragraphs are excluded.
             for page_num in range(len(doc)):
                 for header in extract_header_lines(doc[page_num]):
                     header_text = header["header_text"]
@@ -504,7 +479,73 @@ def search_in_pdf_bytes(pdf_bytes, query, folder_context="", max_results=30, all
         print(f"[search_in_pdf_bytes] Error: {e}")
     return results
 
-# Last-known PDF inventory. Used if GitHub's unauthenticated API is rate-limited.
+# ==========================================
+# यहाँ अनुसूची सर्चको नयाँ फङ्सन राखिएको छ (एरर-फ्री)
+# ==========================================
+def search_anusuchi_tables(pdf_bytes, query, max_results=30):
+    """Find matching अनुसूची headings and return pages containing their tables."""
+    results = []
+    number_match = re.search(r"([0-9०-९]{1,3})", query or "")
+    if not number_match:
+        return results
+    
+    raw_number = number_match.group(1)
+    nep_number = raw_number.translate(str.maketrans("0123456789", "०१२३४५६७८९"))
+    eng_number = raw_number.translate(str.maketrans("०१२३४५६७८९", "0123456789"))
+    
+    # Regex: "अनुसूची" वा "अनसुूची" पछि अप्सनल स्पेस/ड्यास र नम्बर
+    pattern = re.compile(
+        rf"(?:अनुसूची|अनसुूची|अिुसूची)\s*[-]?\s*({nep_number}|{eng_number})", 
+        re.IGNORECASE
+    )
+
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        for page_no in range(len(doc)):
+            page = doc[page_no]
+            text = page_text_unicode(page)
+            
+            opening_lines = [line.strip() for line in text.splitlines() if line.strip()][:20]
+            opening_text = "\n".join(opening_lines)
+            
+            if not pattern.search(opening_text):
+                continue
+                
+            table_found = False
+            table_text = ""
+            try:
+                finder = page.find_tables()
+                if finder.tables:
+                    table_found = True
+                    table_text = "\n".join(" | ".join(str(c or "") for c in row)
+                                           for table in finder.tables for row in (table.extract() or []))
+            except Exception:
+                pass
+                
+            if not table_found:
+                lines = [x.strip() for x in text.splitlines() if x.strip()]
+                table_lines = [x for x in lines if len(re.findall(r"\s{2,}|\t|\|", x)) >= 1]
+                if len(table_lines) >= 2:
+                    table_found = True
+                    table_text = "\n".join(table_lines)
+                    
+            if table_found:
+                results.append({
+                    "page": page_no + 1,
+                    "section": f"अनुसूची {nep_number}",
+                    "snippet": (f"अनुसूची {nep_number} — तालिका"),
+                    "highlight_text": table_text[:4000]
+                })
+                if len(results) >= max_results:
+                    break
+        doc.close()
+    except Exception as e:
+        print(f"[search_anusuchi_tables] Error: {e}")
+    return results
+
+# ==========================================
+# बाँकी कोड (GitHub fetching, collect_results, routes) जस्ताको तस्तै
+# ==========================================
 _FALLBACK_PDF_LIST = [
     "१. नेपालको संबिधान/नेपालको संबिधान (२०७२-०६-०३).pdf",
     "१०. कानुनी संगालो/१०.१. भुमि आयोग कानुन संगालो/सुकुम्बासी समस्या समाधान आयोगका कार्यादेशको संगालो, २०७७-०१-०१.pdf",
@@ -559,9 +600,7 @@ _PDF_LIST_CACHE = []
 _PDF_LIST_CACHE_AT = 0
 _PDF_LIST_CACHE_TTL = 300
 
-
 def get_github_pdfs():
-    """Return PDFs from GitHub, with cache and a known-good fallback inventory."""
     global _PDF_LIST_CACHE, _PDF_LIST_CACHE_AT
     now = time.monotonic()
     if _PDF_LIST_CACHE and now - _PDF_LIST_CACHE_AT < _PDF_LIST_CACHE_TTL:
@@ -605,8 +644,6 @@ def get_github_pdfs():
             _PDF_LIST_CACHE_AT = now
         return list(fallback)
 
-
-
 def get_pdf_bytes_from_github(filepath):
     encoded_path = "/".join(requests.utils.quote(part) for part in ("pdfs/" + filepath).split("/"))
     url = "https://raw.githubusercontent.com/" + GITHUB_REPO + "/" + GITHUB_BRANCH + "/" + encoded_path
@@ -618,56 +655,6 @@ def get_pdf_bytes_from_github(filepath):
         pass
     return None
 
-def search_anusuchi_tables(pdf_bytes, query, max_results=30):
-    """Find matching अनुसूची headings and return pages containing their tables."""
-    results = []
-    number_match = re.search(r"([0-9०-९]{1,3})", query or "")
-    if not number_match:
-        return results
-    number = number_match.group(1).translate(str.maketrans("0123456789", "०१२३४५६७८९"))
-    try:
-        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        heading_key = search_key("अनुसूची" + number)
-        for page_no in range(len(doc)):
-            page = doc[page_no]
-            text = page_text_unicode(page)
-            # Ignore body references such as "अनुसूची-२" inside another rule.
-            # The actual schedule heading must begin one of the page's first five text lines.
-            opening_lines = [search_key(line.strip()) for line in text.splitlines() if line.strip()][:5]
-            if not any(line.startswith(heading_key) for line in opening_lines):
-                continue
-            table_found = False
-            table_text = ""
-            # Prefer PyMuPDF's table detector when available.
-            try:
-                finder = page.find_tables()
-                if finder.tables:
-                    table_found = True
-                    table_text = "\n".join(" | ".join(str(c or "") for c in row)
-                                           for table in finder.tables for row in (table.extract() or []))
-            except Exception:
-                pass
-            # Fallback: a schedule page often has aligned columns / repeated cell separators.
-            if not table_found:
-                lines = [x.strip() for x in text.splitlines() if x.strip()]
-                table_lines = [x for x in lines if len(re.findall(r"\s{2,}|\t|\|", x)) >= 1]
-                if len(table_lines) >= 2:
-                    table_found = True
-                    table_text = "\n".join(table_lines)
-            if table_found:
-                results.append({
-                    "page": page_no + 1,
-                    "section": "अनुसूची " + number,
-                    "snippet": ("अनुसूची " + number + " — तालिका"),
-                    "highlight_text": table_text[:4000]
-                })
-                if len(results) >= max_results:
-                    break
-        doc.close()
-    except Exception as e:
-        print(f"[search_anusuchi_tables] Error: {e}")
-    return results
-
 def collect_results(queries, mode="all", target="", targets=[], anusuchi_query=""):
     all_files = get_github_pdfs()
 
@@ -678,8 +665,6 @@ def collect_results(queries, mode="all", target="", targets=[], anusuchi_query="
     else:
         files_to_search = all_files
 
-    # Keep an audit pool per query so a numeric heading is selected across
-    # the complete requested scope, not independently from every PDF.
     audited = {}
     ordinary = []
     for f in files_to_search:
@@ -696,9 +681,6 @@ def collect_results(queries, mode="all", target="", targets=[], anusuchi_query="
                 if not matches:
                     continue
 
-                # Strict numbered-heading protocol applies only to the
-                # Dhara, Dafa, Niyam and Nirdeshan boxes. Anusuchi is a
-                # separate table lookup and must bypass this ranking.
                 is_anusuchi_search = bool(anusuchi_query and q == anusuchi_query)
                 numeric_query = (
                     not is_anusuchi_search
@@ -715,8 +697,6 @@ def collect_results(queries, mode="all", target="", targets=[], anusuchi_query="
         except Exception as e:
             print(f"Error processing {f}: {e}")
 
-    # Strict staged selection: advance whenever a stage has zero or
-    # multiple matches. A stage wins only when exactly one candidate matches.
     def unique_match(items, predicate):
         hits = [item for item in items if predicate(item)]
         return hits[0] if len(hits) == 1 else None
@@ -727,33 +707,17 @@ def collect_results(queries, mode="all", target="", targets=[], anusuchi_query="
 
         chosen = unique_match(candidates, lambda m: bool(m.get("number_bold")))
         if chosen is None:
-            chosen = unique_match(
-                candidates,
-                lambda m: bool(m.get("header_bold_underlined"))
-            )
+            chosen = unique_match(candidates, lambda m: bool(m.get("header_bold_underlined")))
         if chosen is None:
-            chosen = unique_match(
-                candidates,
-                lambda m: bool(m.get("header_bold", m.get("bold")))
-            )
+            chosen = unique_match(candidates, lambda m: bool(m.get("header_bold", m.get("bold"))))
         if chosen is None:
-            chosen = unique_match(
-                candidates,
-                lambda m: bool(m.get("header_underlined", m.get("underlined")))
-            )
+            chosen = unique_match(candidates, lambda m: bool(m.get("header_underlined", m.get("underlined"))))
 
-        # Flow is considered only after all four style stages. Prefer a
-        # uniquely strongest same-level sequence; ties continue to OCR.
         if chosen is None:
             best_flow = max((int(m.get("sequence_score", 0)) for m in candidates), default=0)
             if best_flow > 0:
-                chosen = unique_match(
-                    candidates,
-                    lambda m: int(m.get("sequence_score", 0)) == best_flow
-                )
+                chosen = unique_match(candidates, lambda m: int(m.get("sequence_score", 0)) == best_flow)
 
-        # OCR is strictly the last tie-break. It extracts only the title
-        # attached to each matching number, never paragraph/body text.
         if chosen is None:
             ocr_candidates = []
             for f in files_to_search:
@@ -799,8 +763,6 @@ def collect_results(queries, mode="all", target="", targets=[], anusuchi_query="
             if ocr_candidates:
                 chosen = max(ocr_candidates, key=lambda m: int(m.get("header_length", 0)))
             else:
-                # If OCR cannot read any candidate, retain the longest native
-                # header title; never measure the body text below a heading.
                 chosen = max(candidates, key=lambda m: int(m.get("header_length", 0)))
 
         chosen = dict(chosen)
@@ -831,7 +793,6 @@ def serve_pdf(filepath):
 
 @app.route("/pdf-highlight/<path:filepath>", methods=["GET", "OPTIONS"])
 def serve_pdf_with_header_highlight(filepath):
-    """Serve a PDF with only the matching numbered main heading highlighted dark red."""
     if request.method == "OPTIONS":
         response = app.make_response(("", 204))
         response.headers["Access-Control-Allow-Origin"] = "*"
@@ -845,8 +806,6 @@ def serve_pdf_with_header_highlight(filepath):
 
     page_number = request.args.get("page", default=1, type=int)
     heading = (request.args.get("snippet") or "").splitlines()[0].strip()
-    # Identify the main heading number immediately followed by a dot (e.g. १२.)
-    # Accept a little spacing between the section number and its dot.
     number_match = re.match(r"^\s*([0-9०-९]+)\s*\.(?![0-9०-९])", heading)
     try:
         doc = fitz.open(stream=pdf_data, filetype="pdf")
@@ -857,8 +816,6 @@ def serve_pdf_with_header_highlight(filepath):
         page = doc[page_number - 1]
         highlighted = False
 
-        # Only numbered main headers are highlighted; body-text searches
-        # deliberately receive no highlight.
         if number_match:
             digit_map = str.maketrans("0123456789", "०१२३४५६७८९")
             wanted = number_match.group(1).translate(digit_map)
@@ -867,7 +824,6 @@ def serve_pdf_with_header_highlight(filepath):
                 for line in block.get("lines", []):
                     line_text = "".join(span.get("text", "") for span in line.get("spans", [])).strip()
                     line_text = line_text.lstrip("\uf0aa\uf076\uf077\uf0a7").strip()
-                    # Some PDFs place the dot in a separate span with a space.
                     line_text = re.sub(r"(?<=[0-9०-९])\s+(?=\.)", "", line_text)
                     line_match = re.match(r"^\s*([0-9०-९]+)\s*\.(?![0-9०-९])", line_text)
                     if not line_match:
@@ -876,7 +832,6 @@ def serve_pdf_with_header_highlight(filepath):
                     if line_number != wanted:
                         continue
 
-                    # Highlight the header line only, never paragraph/body text.
                     rect = fitz.Rect(line.get("bbox", (0, 0, 0, 0)))
                     if not rect.is_empty:
                         annot = page.add_highlight_annot(rect)
@@ -893,7 +848,6 @@ def serve_pdf_with_header_highlight(filepath):
         response = app.make_response((output, 200))
         response.headers["Content-Type"] = "application/pdf"
         response.headers["Content-Disposition"] = 'inline; filename="highlighted.pdf"'
-        # Required because the hosted PDF.js viewer is on a different origin.
         response.headers["Access-Control-Allow-Origin"] = "*"
         response.headers["Access-Control-Expose-Headers"] = "Accept-Ranges, Content-Length, Content-Range"
         response.headers["Accept-Ranges"] = "bytes"
@@ -902,7 +856,6 @@ def serve_pdf_with_header_highlight(filepath):
     except Exception as e:
         print(f"[serve_pdf_with_header_highlight] Error: {e}")
         return "Could not prepare highlighted PDF", 500
-
 
 @app.route("/check_api_key", methods=["POST"])
 def check_api_key():
@@ -980,7 +933,6 @@ def chat():
     
     results = collect_results(queries, mode, target, targets)
     
-    # Gemini ले चयन गरिएको PDF का सबै पृष्ठ पढोस्; header-search result पृष्ठमा मात्र सीमित नगरौँ।
     all_files = get_github_pdfs()
     if mode == "specific" and target:
         chat_files = [target]
@@ -989,7 +941,6 @@ def chat():
     else:
         chat_files = all_files
 
-    # प्रश्नसँग PDF को body text कति मिल्छ भनेर relevant PDF पहिले राख्ने।
     query_keys = [search_key(q) for q in queries if search_key(q)]
     documents = []
     for filename in chat_files:

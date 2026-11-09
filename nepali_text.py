@@ -1,14 +1,11 @@
 """
-नेपाली PDF टेक्स्ट सुधार:
-1) Preeti / Fontasy Himali / Himalb जस्ता पुराना ASCII फन्टको टेक्स्टलाई युनिकोडमा बदल्ने
-2) खोजका लागि टेक्स्ट normalize गर्ने (स्पेस, मात्रा, अंक आदि)
+नेपाली PDF टेक्स्ट सुधार र सर्च नर्मलाइजेसन
 """
 import re
 import unicodedata
 
 LEGACY_FONT_HINTS = ("preeti", "himali", "himalb", "fontasy", "kantipur", "sagarmatha", "pcs nepali", "aakriti")
 
-# Preeti-मा आधारित म्यापिङ (Fontasy Himali पनि यही लेआउट प्रयोग गर्छ)
 _MULTI = [
     ("qm", "क्र"), ("km", "फ"), ("Dm", "म्"), ("q", "त्र"), ("„", "द्ध"), ("‹", "ङ्घ"), ("§", "ट्ट"), ("¶", "ठ्ठ"),
     ("Q", "त्त"), ("Ø", "्र"), ("|", "्र"), ("«", "्र"), ("¥", "र्‍"), ("°", "ङ्ग"),
@@ -35,39 +32,45 @@ _SINGLE = {
 }
 _MATRA = "ािीुूृेैोौंःँ"
 
-
 def convert_preeti(text: str) -> str:
-    if not text:
-        return text
-    for a, b in _MULTI:
-        text = text.replace(a, b)
+    if not text: return text
+    for a, b in _MULTI: text = text.replace(a, b)
     out = "".join(_SINGLE.get(ch, ch) for ch in text)
-    # ि (इकार) Preeti मा अक्षरभन्दा अगाडि लेखिन्छ → पछाडि सार्ने (संयुक्ताक्षर सहित)
     out = re.sub(r"ि((?:.्)*[क-हक्षत्रज्ञ](?:़)?)", r"\1ि", out)
-    # 'f]' = ो, 'f}' = ौ
     out = out.replace("ाे", "ो").replace("ाै", "ौ")
-    # रेफ ({ = र्) अक्षर पछाडि आउँछ → अगाडि सार्ने
     out = re.sub(r"((?:.्)*.[" + _MATRA + r"]*)र्", r"र्\1", out)
     out = out.replace("अा", "आ").replace("आे", "ओ").replace("आै", "औ").replace("एे", "ऐ")
     out = out.replace("्ा", "")
     return out
 
-
 _DEVA = re.compile(r"[\u0900-\u097f]")
 _URL = re.compile(r"www\.|https?:|\.gov|\.np|@\w+\.")
 
-
 def is_legacy_font(font_name: str) -> bool:
-    n = (font_name or "").lower()
-    return any(h in n for h in LEGACY_FONT_HINTS)
+    return any(h in (font_name or "").lower() for h in LEGACY_FONT_HINTS)
 
+def clean_extracted_text(text: str) -> str:
+    if not text: return ""
+    # १. अदृश्य क्यारेक्टर (ZWNJ, ZWJ) हटाउने
+    text = re.sub(r'[\u200B-\u200D\uFEFF]', '', text)
+    # २. युनिकोड नर्मलाइज (मात्रा मिलाउन)
+    text = unicodedata.normalize('NFC', text)
+    # ३. PDF/OCR बाट आउने सामान्य गल्तीहरू सुधार्ने
+    ocr_fixes = {
+        "माईापोत": "मालपोत", "माइापोत": "मालपोत", "मफाात": "जिल्ला", 
+        "अनसुूची": "अनुसूची", "अनसुची": "अनुसूची", "अिुसूची": "अनुसूची",
+        "िहानगरपामलका": "नगरपालिका", "गाउाँपामलका": "गाउँपालिका",
+        "हकत्ता": "कित्ता", "िेरफल": "क्षेत्रफल", "िोही": "मोही", 
+        "मिमत": "मिति", "मबषय": "विषय"
+    }
+    for wrong, right in ocr_fixes.items():
+        text = text.replace(wrong, right)
+    return text
 
 def page_text_unicode(page) -> str:
-    """PyMuPDF पेजबाट टेक्स्ट निकाल्ने, पुराना फन्टको भागलाई युनिकोडमा बदलेर।"""
     lines = []
     d = page.get_text("dict")
     spans = [sp for b in d.get("blocks", []) for l in b.get("lines", []) for sp in l.get("spans", [])]
-    # पेजमा पुरानो फन्ट छ भने, Times New Roman नाममा आएको टेक्स्ट पनि Preeti नै हुन सक्छ
     page_legacy = any(is_legacy_font(sp.get("font", "")) for sp in spans)
     for block in d.get("blocks", []):
         for line in block.get("lines", []):
@@ -79,26 +82,20 @@ def page_text_unicode(page) -> str:
                     and re.search(r"[a-zA-Z;'\]\[{}@#!]", t)):
                     t = convert_preeti(t)
                 parts.append(t)
-            lines.append("".join(parts))
+            raw_text = "".join(parts)
+            lines.append(clean_extracted_text(raw_text)) 
     return "\n".join(lines)
 
-
 _NEP_DIGITS = str.maketrans("0123456789", "०१२३४५६७८९")
-# खोजका लागि हटाउने: स्पेस, ZWJ/ZWNJ, हलन्त, सबै मात्रा, चन्द्रबिन्दु/शिरबिन्दु, नुक्ता
-# Remove whitespace, zero-width controls and punctuation, but KEEP vowel signs.
 _STRIP = re.compile(r"[\s\u200b-\u200d\u0964\u0965,;:!?।॥()\[\]{}\"'“”‘’–—-]+")
 _FOLD = str.maketrans({
     "श": "स", "ष": "स", "व": "ब", "ङ": "न", "ञ": "न", "ण": "न",
-    "ई": "इ", "ी": "ि", "ऊ": "उ", "ू": "ु",
-    "ऐ": "ए", "ै": "े", "औ": "ओ", "ौ": "ो", "आ": "अ",
-    "ँ": "ं", "़": None
+    "ई": "इ", "ी": "ि", "ऊ": "उ", "ू": "ु", "ऐ": "ए", "ै": "े", 
+    "औ": "ओ", "ौ": "ो", "आ": "अ", "ँ": "ं", "़": None
 })
 
-
 def search_key(text: str) -> str:
-    """Nepali search normalization: consonant variants, vowel length and Unicode variants."""
     t = unicodedata.normalize("NFC", text or "").lower().translate(_NEP_DIGITS)
-    # Common PDF font/OCR extraction error: अनुसूची is sometimes extracted as अिुसूची.
-    t = t.replace("अिुसूची", "अनुसूची")
+    t = t.replace("अनसुूची", "अनुसूची").replace("अनसुची", "अनुसूची").replace("अिुसूची", "अनुसूची")
     t = _STRIP.sub("", t)
     return t.translate(_FOLD)
