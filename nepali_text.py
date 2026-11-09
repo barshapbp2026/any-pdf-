@@ -49,22 +49,53 @@ _URL = re.compile(r"www\.|https?:|\.gov|\.np|@\w+\.")
 def is_legacy_font(font_name: str) -> bool:
     return any(h in (font_name or "").lower() for h in LEGACY_FONT_HINTS)
 
+# ==========================================
+# नयाँ: PDF बाट आउँदा बिग्रिएका अक्षर सुधार्ने फङ्सन
+# ==========================================
+def fix_broken_ligatures(text: str) -> str:
+    if not text: return ""
+    # PDF बाट एक्सट्रयाक्ट हुँदा बिग्रिने संयुक्ताक्षरहरूको लिस्ट
+    fixes = {
+        "स्..ीय": "स्थानीय",
+        "स्..ी": "स्थानी",
+        "स्‍थानीय": "स्थानीय",
+        "तिमा": "तहमा",
+        "वि त्र": "क्षेत्र",
+        "वि.त्र": "क्षेत्र",
+        "वि त्रि": "क्षेत्री",
+        "वित्र": "क्षेत्र",
+        "दि.": "दि.",
+        "उपिफा": "उपदफा",
+        "िमत": "मिति",
+        "मबषय": "विषय"
+    }
+    for k, v in fixes.items():
+        text = text.replace(k, v)
+        
+    # Regex प्रयोग गरेर थप सुधार्ने
+    text = re.sub(r"वि\s*त्र", "क्षेत्र", text)
+    text = re.sub(r"स्\s*\.\.\s*ीय", "स्थानीय", text)
+    return text
+
 def clean_extracted_text(text: str) -> str:
     if not text: return ""
     # १. अदृश्य क्यारेक्टर (ZWNJ, ZWJ) हटाउने
     text = re.sub(r'[\u200B-\u200D\uFEFF]', '', text)
     # २. युनिकोड नर्मलाइज (मात्रा मिलाउन)
     text = unicodedata.normalize('NFC', text)
+    
     # ३. PDF/OCR बाट आउने सामान्य गल्तीहरू सुधार्ने
     ocr_fixes = {
         "माईापोत": "मालपोत", "माइापोत": "मालपोत", "मफाात": "जिल्ला", 
         "अनसुूची": "अनुसूची", "अनसुची": "अनुसूची", "अिुसूची": "अनुसूची",
         "िहानगरपामलका": "नगरपालिका", "गाउाँपामलका": "गाउँपालिका",
-        "हकत्ता": "कित्ता", "िेरफल": "क्षेत्रफल", "िोही": "मोही", 
-        "मिमत": "मिति", "मबषय": "विषय"
+        "हकत्ता": "कित्ता", "िेरफल": "क्षेत्रफल", "िोही": "मोही"
     }
     for wrong, right in ocr_fixes.items():
         text = text.replace(wrong, right)
+        
+    # ४. बिग्रिएका संयुक्ताक्षर सुधार्ने
+    text = fix_broken_ligatures(text)
     return text
 
 def page_text_unicode(page) -> str:
@@ -83,6 +114,7 @@ def page_text_unicode(page) -> str:
                     t = convert_preeti(t)
                 parts.append(t)
             raw_text = "".join(parts)
+            # यहाँ सफा गरिएको टेक्स्ट पठाइन्छ
             lines.append(clean_extracted_text(raw_text)) 
     return "\n".join(lines)
 
