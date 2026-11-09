@@ -8,12 +8,20 @@ import fitz
 from dotenv import load_dotenv
 # अपडेट गरिएको nepali_text बाट clean_extracted_text पनि इम्पोर्ट गरिएको छ
 from nepali_text import (page_text_unicode, search_key, convert_preeti, is_legacy_font, _DEVA, _URL, clean_extracted_text)
+from sabda import search_headers
+from anusuchi import search_anusuchi
 
 load_dotenv() 
 app = Flask(__name__)
 
 GITHUB_REPO = "barshapbp2026/any-pdf-"
 GITHUB_BRANCH = "main"
+
+# Cache repository PDF paths to avoid repeated GitHub tree requests.
+_PDF_LIST_CACHE = []
+_PDF_LIST_CACHE_AT = 0.0
+_PDF_LIST_CACHE_TTL = 300
+_FALLBACK_PDF_LIST = []
 
 def _ocr_numbered_headers(page, page_num, target_pattern, any_heading_pattern, digits, expected_prefix):
     """OCR fallback for scanned/image-only PDF pages, with visual style hints."""
